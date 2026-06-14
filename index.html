@@ -253,7 +253,7 @@ const state = {
   players: [],
   timeLimit: 120,
   error: '',
-  pendingSetterId: null,
+  loggedIn: [],
   setter: null,
   guesser: null,
   game: null,
@@ -303,10 +303,6 @@ function loadTimePref() {
 
 function saveTimePref() {
   try { localStorage.setItem(TIME_KEY, String(state.timeLimit)); } catch {}
-}
-
-function otherPlayer(userId) {
-  return state.players.find(p => p.userId !== userId);
 }
 
 // ---------- API calls ----------
@@ -419,11 +415,11 @@ function render() {
   switch (state.screen) {
     case 'loading': return renderLoading(app);
     case 'error': return renderError(app);
+    case 'login-1': return renderLogin1(app);
+    case 'login-2': return renderLogin2(app);
     case 'choose-setter': return renderChooseSetter(app);
-    case 'login-setter': return renderLoginSetter(app);
     case 'enter-word': return renderEnterWord(app);
     case 'handoff': return renderHandoff(app);
-    case 'login-guesser': return renderLoginGuesser(app);
     case 'guess': return renderGuess(app);
     case 'result': return renderResult(app);
   }
@@ -467,7 +463,7 @@ function renderError(app) {
 }
 
 function renderChooseSetter(app) {
-  const [p1, p2] = state.players;
+  const [p1, p2] = state.loggedIn;
   app.innerHTML = `
     <h2>¿Quién pone la palabra esta vez?</h2>
     <p class="hint">El que pone la palabra pierde 1 punto si la adivina el otro. Si se acaba el tiempo, el que adivina pierde 1.</p>
@@ -480,15 +476,17 @@ function renderChooseSetter(app) {
       </div>
     </div>
     <div class="center" style="margin-top:24px;">
-      <button class="big-button" data-setter="${escapeHtml(p1.userId)}">${escapeHtml(p1.name)} pone la palabra</button>
-      <button class="big-button" data-setter="${escapeHtml(p2.userId)}">${escapeHtml(p2.name)} pone la palabra</button>
+      <button class="big-button" data-setter="${escapeHtml(p1.id)}">${escapeHtml(p1.name)} pone la palabra</button>
+      <button class="big-button" data-setter="${escapeHtml(p2.id)}">${escapeHtml(p2.name)} pone la palabra</button>
     </div>
   `;
   setupTimeButtons(app);
   app.querySelectorAll('button[data-setter]').forEach(btn => {
     btn.onclick = () => {
-      state.pendingSetterId = btn.dataset.setter;
-      state.screen = 'login-setter';
+      const setterId = btn.dataset.setter;
+      state.setter = state.loggedIn.find(p => p.id === setterId);
+      state.guesser = state.loggedIn.find(p => p.id !== setterId);
+      state.screen = 'enter-word';
       render();
     };
   });
@@ -510,12 +508,10 @@ function setupTimeButtons(container) {
 }
 
 function renderLoginForm(app, opts) {
-  const { title, expected, role, onSuccess } = opts;
+  const { title, infoHtml, validate, onSuccess } = opts;
   app.innerHTML = `
     <h2>${escapeHtml(title)}</h2>
-    <div class="info-box">
-      Inicia sesión como <strong>${escapeHtml(expected.name)}</strong> para ${role === 'setter' ? 'poner la palabra' : 'adivinar la palabra'}.
-    </div>
+    <div class="info-box">${infoHtml}</div>
     <div class="login-card">
       <div class="form-row">
         <label for="email">Email de la cuenta del hub</label>
@@ -549,12 +545,13 @@ function renderLoginForm(app, opts) {
     errBox.innerHTML = '';
     try {
       const user = await neonLogin(e, p);
-      if (user.id !== expected.userId) {
+      const errMsg = validate(user);
+      if (errMsg) {
         await neonLogout();
-        throw new Error(`Esa cuenta no es ${expected.name}. Inicia sesión con la cuenta de ${expected.name}.`);
+        throw new Error(errMsg);
       }
       await setAccessCookie(user);
-      onSuccess({ id: user.id, name: expected.name });
+      onSuccess(user);
     } catch (e) {
       btn.disabled = false;
       btn.textContent = 'Iniciar sesión';
@@ -567,16 +564,43 @@ function renderLoginForm(app, opts) {
   }));
 }
 
-function renderLoginSetter(app) {
-  const expected = state.players.find(p => p.userId === state.pendingSetterId);
+function renderLogin1(app) {
+  const [p1, p2] = state.players;
   renderLoginForm(app, {
-    title: 'Login del que pone la palabra',
-    expected,
-    role: 'setter',
+    title: 'Login del primer jugador',
+    infoHtml: `Cualquiera puede empezar: <strong>${escapeHtml(p1.name)}</strong> o <strong>${escapeHtml(p2.name)}</strong>.`,
+    validate: (user) => {
+      if (!state.players.find(p => p.userId === user.id)) {
+        return 'Esa cuenta no es jugador de esta sala.';
+      }
+      return null;
+    },
     onSuccess: (user) => {
-      state.setter = user;
-      state.guesser = null;
-      state.screen = 'enter-word';
+      const room = state.players.find(p => p.userId === user.id);
+      state.loggedIn = [{ id: user.id, name: room.name }];
+      state.screen = 'login-2';
+      render();
+    },
+  });
+}
+
+function renderLogin2(app) {
+  const first = state.loggedIn[0];
+  const other = state.players.find(p => p.userId !== first.id);
+  renderLoginForm(app, {
+    title: `Login del segundo jugador`,
+    infoHtml: `<strong>${escapeHtml(first.name)}</strong> ya está dentro. Ahora le toca a <strong>${escapeHtml(other.name)}</strong>.`,
+    validate: (user) => {
+      if (user.id === first.id) return 'Esa cuenta ya está registrada. Ahora tiene que entrar el otro jugador.';
+      if (!state.players.find(p => p.userId === user.id)) {
+        return 'Esa cuenta no es jugador de esta sala.';
+      }
+      return null;
+    },
+    onSuccess: (user) => {
+      const room = state.players.find(p => p.userId === user.id);
+      state.loggedIn.push({ id: user.id, name: room.name });
+      state.screen = 'choose-setter';
       render();
     },
   });
@@ -658,37 +682,17 @@ function renderEnterWord(app) {
 }
 
 function renderHandoff(app) {
-  const next = otherPlayer(state.setter.id);
   app.innerHTML = `
-    <h2>Pasa el ordenador a ${escapeHtml(next.name)}</h2>
-    <p class="hint">${escapeHtml(state.setter.name)} cierra sesión, y ${escapeHtml(next.name)} inicia sesión para adivinar.</p>
+    <h2>Pasa el ordenador a ${escapeHtml(state.guesser.name)}</h2>
+    <p class="hint">${escapeHtml(state.setter.name)} ya ha escrito la palabra. Cuando ${escapeHtml(state.guesser.name)} esté listo, empieza.</p>
     <div class="center">
-      <button class="big-button" id="handoff-btn">Cerrar sesión de ${escapeHtml(state.setter.name)}</button>
+      <button class="big-button" id="begin-btn">Empezar a adivinar</button>
     </div>
   `;
-  document.getElementById('handoff-btn').onclick = async () => {
-    const btn = document.getElementById('handoff-btn');
-    btn.disabled = true;
-    btn.innerHTML = '<span class="spinner"></span> Cerrando sesión…';
-    await neonLogout();
-    await clearAccessCookie();
-    state.screen = 'login-guesser';
+  document.getElementById('begin-btn').onclick = () => {
+    state.screen = 'guess';
     render();
   };
-}
-
-function renderLoginGuesser(app) {
-  const expected = otherPlayer(state.setter.id);
-  renderLoginForm(app, {
-    title: 'Login del que adivina',
-    expected,
-    role: 'guesser',
-    onSuccess: (user) => {
-      state.guesser = user;
-      state.screen = 'guess';
-      render();
-    },
-  });
 }
 
 function renderGuess(app) {
@@ -872,17 +876,11 @@ function renderResult(app) {
     render();
   };
 
-  document.getElementById('again-btn').onclick = async () => {
-    const btn = document.getElementById('again-btn');
-    btn.disabled = true;
-    btn.innerHTML = '<span class="spinner"></span> Cerrando sesión…';
-    await neonLogout();
-    await clearAccessCookie();
+  document.getElementById('again-btn').onclick = () => {
     state.setter = null;
     state.guesser = null;
     state.game = null;
     state.resultStatus = null;
-    state.pendingSetterId = null;
     state.screen = 'choose-setter';
     render();
   };
@@ -949,6 +947,7 @@ async function init() {
     }
     state.room = room;
     state.players = players;
+    state.loggedIn = [];
     state.sessionScores = {};
     for (const p of players) {
       state.sessionScores[p.userId] = { wins: 0, losses: 0, score: 0 };
@@ -956,7 +955,7 @@ async function init() {
     // Por si quedó alguna sesión abierta: limpiar antes de empezar
     await neonLogout();
     await clearAccessCookie();
-    state.screen = 'choose-setter';
+    state.screen = 'login-1';
     render();
   } catch (e) {
     state.screen = 'error';
