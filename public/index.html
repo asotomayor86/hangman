@@ -401,6 +401,20 @@
 const HUB_URL = typeof location !== 'undefined' && location.hostname.endsWith('gamehub.family')
   ? 'https://gamehub.family'
   : 'https://one-page-to-rule-them-all.vercel.app';
+// Prefijo de ruta del juego. Cuando el juego se sirve bajo el hub
+// (gamehub.family/hangman/...) las llamadas a la API y los enlaces deben
+// llevar /hangman delante para que el rewrite las dirija a este proyecto.
+// Si estamos en el subdominio (hangman.gamehub.family) o en cualquier otra
+// URL, el prefijo queda vacío y todo va a la raíz como hasta ahora.
+const PATH_PREFIX = (() => {
+  if (typeof location === 'undefined') return '';
+  // El rewrite del hub solo aplica cuando estamos en gamehub.family raíz.
+  if (location.hostname === 'gamehub.family' && location.pathname.startsWith('/hangman')) {
+    return '/hangman';
+  }
+  return '';
+})();
+const API = (p) => `${PATH_PREFIX}${p}`;
 const ALPHABET = 'ABCDEFGHIJKLMNÑOPQRSTUVWXYZ'.split('');
 const MAX_ERRORS = 6;
 const POLL_MS = 1500;
@@ -532,7 +546,7 @@ async function tryHubSession() {
 }
 
 async function setAccessCookie(user) {
-  const res = await fetch('/api/access', {
+  const res = await fetch(API('/api/access'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ userId: user.id, name: user.name }),
@@ -541,7 +555,7 @@ async function setAccessCookie(user) {
 }
 
 async function clearAccessCookie() {
-  try { await fetch('/api/access', { method: 'DELETE' }); } catch {}
+  try { await fetch(API('/api/access'), { method: 'DELETE' }); } catch {}
 }
 
 function extractErrorText(data, status) {
@@ -555,7 +569,7 @@ function extractErrorText(data, status) {
 }
 
 async function fetchState() {
-  const res = await fetch(`/api/state?code=${encodeURIComponent(ui.roomCode)}`, {
+  const res = await fetch(API(`/api/state?code=${encodeURIComponent(ui.roomCode)}`), {
     headers: { Accept: 'application/json' },
   });
   if (res.status === 401) { const e = new Error('Sesión expirada'); e.status = 401; throw e; }
@@ -570,7 +584,7 @@ async function fetchState() {
 }
 
 async function dispatch(type, payload = {}) {
-  const res = await fetch('/api/action', {
+  const res = await fetch(API('/api/action'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ code: ui.roomCode, type, payload }),
