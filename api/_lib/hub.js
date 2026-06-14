@@ -85,9 +85,14 @@ export async function submitMatchResultToHub(state, code) {
     : 'sin vidas';
 
   try {
+    // closeRoom: solo la última partida de la serie cierra la sala. Para las
+    // intermedias de un best-of-N seguimos abiertos para poder jugar la
+    // siguiente ronda. El hub respeta el flag si llega definido.
+    const closeRoom = !!state.seriesWinner;
     const out = await submitHubResult(code, {
       results,
       notes: `Ahorcado: ${motivoLog}`,
+      closeRoom,
     });
     state.round.resultStatus = out.ok
       ? { sending: false, ok: true, error: null }
