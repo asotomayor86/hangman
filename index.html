@@ -1,0 +1,971 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>El Ahorcado</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    background: linear-gradient(135deg, #f6d365 0%, #fda085 100%);
+    margin: 0;
+    padding: 20px;
+    min-height: 100vh;
+  }
+  .container {
+    max-width: 760px;
+    margin: 0 auto;
+    background: white;
+    padding: 32px;
+    border-radius: 16px;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.15);
+  }
+  h1 {
+    text-align: center;
+    color: #2c3e50;
+    margin-top: 0;
+    margin-bottom: 8px;
+    font-size: 36px;
+  }
+  h2 { color: #34495e; text-align: center; margin-bottom: 24px; }
+  .room-info {
+    text-align: center;
+    color: #7f8c8d;
+    font-size: 14px;
+    margin-bottom: 16px;
+  }
+  .room-info strong { color: #34495e; font-size: 16px; }
+  .scores {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+    margin-bottom: 24px;
+    flex-wrap: wrap;
+  }
+  .score {
+    padding: 12px 24px;
+    background: #ecf0f1;
+    border-radius: 12px;
+    font-size: 16px;
+    min-width: 150px;
+    text-align: center;
+  }
+  .score .name { font-weight: bold; display: block; color: #2c3e50; margin-bottom: 4px; }
+  .score .value { font-size: 24px; color: #3498db; font-weight: bold; }
+  .score .value.negative { color: #e74c3c; }
+  .score .ratio { font-size: 12px; color: #7f8c8d; margin-top: 2px; }
+  input[type=text], input[type=email], input[type=password] {
+    font-size: 20px;
+    padding: 14px;
+    width: 100%;
+    border: 2px solid #bdc3c7;
+    border-radius: 10px;
+    margin-bottom: 8px;
+  }
+  input:focus { outline: none; border-color: #3498db; }
+  button {
+    font-size: 18px;
+    padding: 14px 28px;
+    background: #3498db;
+    color: white;
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+    margin: 6px;
+    font-weight: 600;
+  }
+  button:hover:not(:disabled) { background: #2980b9; }
+  button:active:not(:disabled) { transform: scale(0.97); }
+  button:disabled { background: #bdc3c7; cursor: not-allowed; opacity: 0.6; }
+  button.right { background: #27ae60 !important; }
+  button.wrong { background: #e74c3c !important; }
+  button.danger { background: #e74c3c; }
+  button.danger:hover:not(:disabled) { background: #c0392b; }
+  button.ghost { background: transparent; color: #7f8c8d; border: 1px solid #bdc3c7; }
+  button.ghost:hover:not(:disabled) { background: #ecf0f1; color: #34495e; }
+  .big-button {
+    font-size: 22px;
+    padding: 18px 36px;
+    display: block;
+    margin: 16px auto;
+    min-width: 280px;
+  }
+  .form-row { margin-bottom: 18px; }
+  .form-row label {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: bold;
+    color: #34495e;
+    font-size: 17px;
+  }
+  .word-display {
+    font-size: 44px;
+    letter-spacing: 6px;
+    text-align: center;
+    margin: 24px 0;
+    font-family: "Courier New", monospace;
+    font-weight: bold;
+    color: #2c3e50;
+    min-height: 56px;
+  }
+  .alphabet {
+    display: grid;
+    grid-template-columns: repeat(9, 1fr);
+    gap: 6px;
+    margin-top: 24px;
+  }
+  .alphabet button { padding: 14px 0; margin: 0; font-size: 18px; }
+  .center { text-align: center; }
+  .info-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin: 16px 0;
+    font-size: 17px;
+    color: #34495e;
+  }
+  .wrong-letters { color: #e74c3c; font-weight: bold; letter-spacing: 4px; }
+  .hangman-svg { display: block; margin: 0 auto; }
+  .result-message {
+    font-size: 28px;
+    text-align: center;
+    margin: 20px 0;
+    font-weight: bold;
+  }
+  .result-message.win { color: #27ae60; }
+  .result-message.lose { color: #e74c3c; }
+  .reveal {
+    font-size: 22px;
+    text-align: center;
+    color: #34495e;
+    margin: 12px 0;
+  }
+  .reveal strong { color: #2c3e50; font-size: 28px; letter-spacing: 4px; }
+  .hint {
+    font-size: 15px;
+    color: #7f8c8d;
+    text-align: center;
+    margin-top: 8px;
+  }
+  .time-options { display: flex; gap: 8px; flex-wrap: wrap; }
+  .time-options button {
+    flex: 1;
+    min-width: 100px;
+    background: #ecf0f1;
+    color: #34495e;
+    margin: 0;
+  }
+  .time-options button:hover:not(:disabled) { background: #d5dbdb; }
+  .time-options button.selected { background: #3498db; color: white; }
+  .timer-row {
+    text-align: center;
+    margin: 18px 0;
+    padding: 12px;
+    background: #f8f9fa;
+    border-radius: 10px;
+  }
+  .timer-label { font-size: 14px; color: #7f8c8d; margin-bottom: 4px; }
+  .timer-value {
+    font-size: 38px;
+    font-weight: bold;
+    color: #3498db;
+    font-family: "Courier New", monospace;
+    letter-spacing: 2px;
+  }
+  .timer-value.urgent { color: #e74c3c; animation: pulse 0.6s infinite alternate; }
+  @keyframes pulse {
+    from { transform: scale(1); }
+    to { transform: scale(1.12); }
+  }
+  .error-box {
+    background: #fdecea;
+    border-left: 4px solid #e74c3c;
+    color: #922b21;
+    padding: 12px 16px;
+    border-radius: 6px;
+    margin: 12px 0;
+  }
+  .info-box {
+    background: #ebf5fb;
+    border-left: 4px solid #3498db;
+    color: #1b4f72;
+    padding: 12px 16px;
+    border-radius: 6px;
+    margin: 12px 0;
+  }
+  .ok-box {
+    background: #e9f7ef;
+    border-left: 4px solid #27ae60;
+    color: #145a32;
+    padding: 12px 16px;
+    border-radius: 6px;
+    margin: 12px 0;
+    text-align: center;
+  }
+  .login-card {
+    background: #f8f9fa;
+    padding: 24px;
+    border-radius: 12px;
+    margin-top: 16px;
+  }
+  .login-card h3 {
+    margin-top: 0;
+    color: #2c3e50;
+    font-size: 20px;
+  }
+  .spinner {
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    border: 2px solid #bdc3c7;
+    border-top-color: #3498db;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    vertical-align: middle;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (max-width: 600px) {
+    .alphabet { grid-template-columns: repeat(7, 1fr); }
+    h1 { font-size: 28px; }
+    .word-display { font-size: 32px; letter-spacing: 4px; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>El Ahorcado</h1>
+  <div id="room-info" class="room-info"></div>
+  <div id="scores"></div>
+  <div id="app"></div>
+</div>
+
+<script type="module">
+const HUB_URL = 'https://one-page-to-rule-them-all.vercel.app';
+const ALPHABET = 'ABCDEFGHIJKLMNÑOPQRSTUVWXYZ'.split('');
+const MAX_ERRORS = 6;
+const TIME_KEY = 'ahorcado-time-limit';
+
+const state = {
+  screen: 'loading',
+  roomCode: '',
+  room: null,
+  players: [],
+  timeLimit: 120,
+  error: '',
+  pendingSetterId: null,
+  setter: null,
+  guesser: null,
+  game: null,
+  sessionScores: {},
+  resultStatus: null,
+};
+
+let tickInterval = null;
+
+// ---------- Utilidades ----------
+function escapeHtml(s) {
+  const div = document.createElement('div');
+  div.textContent = s == null ? '' : String(s);
+  return div.innerHTML;
+}
+
+function normalize(s) {
+  return s.toUpperCase()
+    .replace(/Á/g, 'A').replace(/À/g, 'A').replace(/Â/g, 'A').replace(/Ä/g, 'A')
+    .replace(/É/g, 'E').replace(/È/g, 'E').replace(/Ê/g, 'E').replace(/Ë/g, 'E')
+    .replace(/Í/g, 'I').replace(/Ì/g, 'I').replace(/Î/g, 'I').replace(/Ï/g, 'I')
+    .replace(/Ó/g, 'O').replace(/Ò/g, 'O').replace(/Ô/g, 'O').replace(/Ö/g, 'O')
+    .replace(/Ú/g, 'U').replace(/Ù/g, 'U').replace(/Û/g, 'U').replace(/Ü/g, 'U');
+}
+
+function isValidWord(s) {
+  const n = normalize(s.trim());
+  if (n.length < 3) return false;
+  if (!/^[A-ZÑ ]+$/.test(n)) return false;
+  if (n.replace(/ /g, '').length < 3) return false;
+  return true;
+}
+
+function formatTime(sec) {
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
+function loadTimePref() {
+  try {
+    const raw = localStorage.getItem(TIME_KEY);
+    const n = parseInt(raw || '', 10);
+    if ([60, 120, 180].includes(n)) state.timeLimit = n;
+  } catch {}
+}
+
+function saveTimePref() {
+  try { localStorage.setItem(TIME_KEY, String(state.timeLimit)); } catch {}
+}
+
+function otherPlayer(userId) {
+  return state.players.find(p => p.userId !== userId);
+}
+
+// ---------- API calls ----------
+async function loadRoom(code) {
+  const res = await fetch(`${HUB_URL}/api/rooms/${encodeURIComponent(code)}`, {
+    headers: { Accept: 'application/json' },
+  });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`El hub respondió ${res.status} al leer la sala`);
+  return res.json();
+}
+
+async function neonLogin(email, password) {
+  const res = await fetch(`${HUB_URL}/api/auth/sign-in/email`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password }),
+  });
+  let data = {};
+  try { data = await res.json(); } catch {}
+  if (!res.ok) {
+    const msg = data?.message || data?.error?.message || 'Email o contraseña incorrectos.';
+    throw new Error(msg);
+  }
+  const user = data?.user || data?.data?.user || data?.session?.user;
+  if (!user?.id) throw new Error('No se pudo iniciar sesión.');
+  return { id: user.id, name: user.name || user.email || '' };
+}
+
+async function neonLogout() {
+  try {
+    await fetch(`${HUB_URL}/api/auth/sign-out`, { method: 'POST', credentials: 'include' });
+  } catch {}
+}
+
+async function setAccessCookie(user) {
+  const res = await fetch('/api/access', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ userId: user.id, name: user.name }),
+  });
+  if (!res.ok) throw new Error('No se pudo registrar la sesión local.');
+}
+
+async function clearAccessCookie() {
+  try { await fetch('/api/access', { method: 'DELETE' }); } catch {}
+}
+
+async function submitResultToHub(payload) {
+  const res = await fetch('/api/result', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  let data = {};
+  try { data = await res.json(); } catch {}
+  if (!res.ok) throw new Error(data?.error || 'No se pudo enviar el resultado.');
+  return data;
+}
+
+async function verifyWord(rawWord) {
+  const words = rawWord.trim().toLowerCase().split(/\s+/).filter(w => w.length > 0);
+  for (const w of words) {
+    const url = `https://es.wiktionary.org/w/api.php?action=query&titles=${encodeURIComponent(w)}&format=json&origin=*`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('Network');
+    const data = await res.json();
+    const pages = (data && data.query && data.query.pages) || {};
+    const ids = Object.keys(pages);
+    if (ids.length === 0) return { ok: false, missing: w };
+    if ('missing' in pages[ids[0]]) return { ok: false, missing: w };
+  }
+  return { ok: true };
+}
+
+// ---------- Timer ----------
+function startTimer() {
+  stopTimer();
+  tickInterval = setInterval(() => {
+    if (!state.game || !state.game.endTime || state.screen !== 'guess') {
+      stopTimer();
+      return;
+    }
+    const remaining = state.game.endTime - Date.now();
+    if (remaining <= 0) { stopTimer(); finishGame('time-out'); return; }
+    updateTimerDisplay(remaining);
+  }, 250);
+}
+
+function stopTimer() {
+  if (tickInterval) { clearInterval(tickInterval); tickInterval = null; }
+}
+
+function updateTimerDisplay(remainingMs) {
+  const el = document.getElementById('timer');
+  if (!el) return;
+  const sec = Math.max(0, Math.ceil(remainingMs / 1000));
+  el.textContent = formatTime(sec);
+  el.classList.toggle('urgent', sec <= 10);
+}
+
+// ---------- Render orchestrator ----------
+function render() {
+  if (state.screen !== 'guess') stopTimer();
+  renderRoomInfo();
+  renderScores();
+  const app = document.getElementById('app');
+  app.innerHTML = '';
+  switch (state.screen) {
+    case 'loading': return renderLoading(app);
+    case 'error': return renderError(app);
+    case 'choose-setter': return renderChooseSetter(app);
+    case 'login-setter': return renderLoginSetter(app);
+    case 'enter-word': return renderEnterWord(app);
+    case 'handoff': return renderHandoff(app);
+    case 'login-guesser': return renderLoginGuesser(app);
+    case 'guess': return renderGuess(app);
+    case 'result': return renderResult(app);
+  }
+}
+
+function renderRoomInfo() {
+  const el = document.getElementById('room-info');
+  if (!state.room) { el.innerHTML = ''; return; }
+  const gameName = state.room.game?.name || 'Ahorcado';
+  el.innerHTML = `Sala <strong>${escapeHtml(state.room.code)}</strong> · ${escapeHtml(gameName)}`;
+}
+
+function renderScores() {
+  const el = document.getElementById('scores');
+  if (!state.players.length) { el.innerHTML = ''; return; }
+  el.innerHTML = state.players.map(p => {
+    const s = state.sessionScores[p.userId] || { wins: 0, losses: 0, score: 0 };
+    const cls = s.score < 0 ? 'value negative' : 'value';
+    return `<div class="score">
+      <span class="name">${escapeHtml(p.name)}</span>
+      <span class="${cls}">${s.score}</span>
+      <div class="ratio">${s.wins} ganadas · ${s.losses} perdidas</div>
+    </div>`;
+  }).join('');
+}
+
+// ---------- Screens ----------
+function renderLoading(app) {
+  app.innerHTML = `<h2>Cargando sala…</h2><div class="center"><div class="spinner"></div></div>`;
+}
+
+function renderError(app) {
+  app.innerHTML = `
+    <h2>No se pudo entrar</h2>
+    <div class="error-box">${escapeHtml(state.error || 'Error desconocido')}</div>
+    <p class="hint">Vuelve al hub y crea una sala para entrar de nuevo.</p>
+    <div class="center">
+      <a href="${HUB_URL}"><button>Volver al hub</button></a>
+    </div>
+  `;
+}
+
+function renderChooseSetter(app) {
+  const [p1, p2] = state.players;
+  app.innerHTML = `
+    <h2>¿Quién pone la palabra esta vez?</h2>
+    <p class="hint">El que pone la palabra pierde 1 punto si la adivina el otro. Si se acaba el tiempo, el que adivina pierde 1.</p>
+    <div class="form-row" style="margin-top:20px;">
+      <label>Tiempo por partida</label>
+      <div class="time-options">
+        <button data-time="60">1 minuto</button>
+        <button data-time="120">2 minutos</button>
+        <button data-time="180">3 minutos</button>
+      </div>
+    </div>
+    <div class="center" style="margin-top:24px;">
+      <button class="big-button" data-setter="${escapeHtml(p1.userId)}">${escapeHtml(p1.name)} pone la palabra</button>
+      <button class="big-button" data-setter="${escapeHtml(p2.userId)}">${escapeHtml(p2.name)} pone la palabra</button>
+    </div>
+  `;
+  setupTimeButtons(app);
+  app.querySelectorAll('button[data-setter]').forEach(btn => {
+    btn.onclick = () => {
+      state.pendingSetterId = btn.dataset.setter;
+      state.screen = 'login-setter';
+      render();
+    };
+  });
+}
+
+function setupTimeButtons(container) {
+  const buttons = container.querySelectorAll('.time-options button');
+  const update = () => buttons.forEach(b => {
+    b.classList.toggle('selected', parseInt(b.dataset.time) === state.timeLimit);
+  });
+  buttons.forEach(b => {
+    b.onclick = () => {
+      state.timeLimit = parseInt(b.dataset.time);
+      saveTimePref();
+      update();
+    };
+  });
+  update();
+}
+
+function renderLoginForm(app, opts) {
+  const { title, expected, role, onSuccess } = opts;
+  app.innerHTML = `
+    <h2>${escapeHtml(title)}</h2>
+    <div class="info-box">
+      Inicia sesión como <strong>${escapeHtml(expected.name)}</strong> para ${role === 'setter' ? 'poner la palabra' : 'adivinar la palabra'}.
+    </div>
+    <div class="login-card">
+      <div class="form-row">
+        <label for="email">Email de la cuenta del hub</label>
+        <input type="email" id="email" autocomplete="email" autocapitalize="off">
+      </div>
+      <div class="form-row">
+        <label for="password">Contraseña</label>
+        <input type="password" id="password" autocomplete="current-password">
+      </div>
+      <div id="login-error"></div>
+      <div class="center">
+        <button class="big-button" id="login-btn">Iniciar sesión</button>
+      </div>
+    </div>
+  `;
+  const email = document.getElementById('email');
+  const password = document.getElementById('password');
+  const btn = document.getElementById('login-btn');
+  const errBox = document.getElementById('login-error');
+  email.focus();
+
+  const submit = async () => {
+    const e = email.value.trim();
+    const p = password.value;
+    if (!e || !p) {
+      errBox.innerHTML = '<div class="error-box">Rellena email y contraseña.</div>';
+      return;
+    }
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Iniciando…';
+    errBox.innerHTML = '';
+    try {
+      const user = await neonLogin(e, p);
+      if (user.id !== expected.userId) {
+        await neonLogout();
+        throw new Error(`Esa cuenta no es ${expected.name}. Inicia sesión con la cuenta de ${expected.name}.`);
+      }
+      await setAccessCookie(user);
+      onSuccess({ id: user.id, name: expected.name });
+    } catch (e) {
+      btn.disabled = false;
+      btn.textContent = 'Iniciar sesión';
+      errBox.innerHTML = `<div class="error-box">${escapeHtml(e.message)}</div>`;
+    }
+  };
+  btn.onclick = submit;
+  [email, password].forEach(inp => inp.addEventListener('keydown', ev => {
+    if (ev.key === 'Enter') submit();
+  }));
+}
+
+function renderLoginSetter(app) {
+  const expected = state.players.find(p => p.userId === state.pendingSetterId);
+  renderLoginForm(app, {
+    title: 'Login del que pone la palabra',
+    expected,
+    role: 'setter',
+    onSuccess: (user) => {
+      state.setter = user;
+      state.guesser = null;
+      state.screen = 'enter-word';
+      render();
+    },
+  });
+}
+
+function renderEnterWord(app) {
+  app.innerHTML = `
+    <h2>${escapeHtml(state.setter.name)}, escribe la palabra</h2>
+    <p class="hint">El otro jugador no debe mirar. La palabra se ocultará mientras escribes.</p>
+    <div class="form-row">
+      <input type="password" id="word-input" placeholder="Palabra o frase corta" autocomplete="off" maxlength="40">
+    </div>
+    <p class="hint">Solo letras y espacios. Mínimo 3 letras. Las tildes se ignoran (la ñ sí cuenta). Se comprobará en el diccionario.</p>
+    <button class="big-button" id="word-ok">Listo</button>
+    <div id="verify-status"></div>
+  `;
+  const input = document.getElementById('word-input');
+  const btn = document.getElementById('word-ok');
+  const status = document.getElementById('verify-status');
+  input.focus();
+
+  const proceed = (raw) => {
+    state.game = {
+      originalWord: raw.trim(),
+      word: normalize(raw),
+      guessed: new Set(),
+      wrong: new Set(),
+      endTime: null,
+      result: null,
+    };
+    state.screen = 'handoff';
+    render();
+  };
+
+  const submit = async () => {
+    const raw = input.value.trim();
+    if (!isValidWord(raw)) {
+      alert('Palabra no válida. Solo letras y espacios, mínimo 3 letras.');
+      return;
+    }
+    btn.disabled = true;
+    status.innerHTML = '<p class="hint" style="margin-top:16px;">Verificando que la palabra existe…</p>';
+    let result;
+    try {
+      result = await verifyWord(raw);
+    } catch {
+      status.innerHTML = `
+        <div class="error-box" style="margin-top:16px;">No se pudo conectar al diccionario.</div>
+        <div class="center">
+          <button id="continue-anyway">Continuar igualmente</button>
+          <button id="retry-verify" class="danger">Reintentar</button>
+        </div>`;
+      document.getElementById('continue-anyway').onclick = () => proceed(raw);
+      document.getElementById('retry-verify').onclick = () => { btn.disabled = false; status.innerHTML = ''; submit(); };
+      return;
+    }
+    if (result.ok) {
+      proceed(raw);
+    } else {
+      status.innerHTML = `
+        <div class="error-box" style="margin-top:16px;">
+          No encuentro <strong>${escapeHtml(result.missing || raw)}</strong> en el diccionario. Si es un nombre propio, puedes usarla igualmente.
+        </div>
+        <div class="center">
+          <button id="try-again">Probar otra</button>
+          <button id="force-use" class="danger">Usar igualmente</button>
+        </div>`;
+      document.getElementById('try-again').onclick = () => {
+        btn.disabled = false;
+        status.innerHTML = '';
+        input.value = '';
+        input.focus();
+      };
+      document.getElementById('force-use').onclick = () => proceed(raw);
+    }
+  };
+  btn.onclick = submit;
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') submit(); });
+}
+
+function renderHandoff(app) {
+  const next = otherPlayer(state.setter.id);
+  app.innerHTML = `
+    <h2>Pasa el ordenador a ${escapeHtml(next.name)}</h2>
+    <p class="hint">${escapeHtml(state.setter.name)} cierra sesión, y ${escapeHtml(next.name)} inicia sesión para adivinar.</p>
+    <div class="center">
+      <button class="big-button" id="handoff-btn">Cerrar sesión de ${escapeHtml(state.setter.name)}</button>
+    </div>
+  `;
+  document.getElementById('handoff-btn').onclick = async () => {
+    const btn = document.getElementById('handoff-btn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Cerrando sesión…';
+    await neonLogout();
+    await clearAccessCookie();
+    state.screen = 'login-guesser';
+    render();
+  };
+}
+
+function renderLoginGuesser(app) {
+  const expected = otherPlayer(state.setter.id);
+  renderLoginForm(app, {
+    title: 'Login del que adivina',
+    expected,
+    role: 'guesser',
+    onSuccess: (user) => {
+      state.guesser = user;
+      state.screen = 'guess';
+      render();
+    },
+  });
+}
+
+function renderGuess(app) {
+  const g = state.game;
+  const errors = g.wrong.size;
+  const livesLeft = MAX_ERRORS - errors;
+  if (!g.endTime) g.endTime = Date.now() + state.timeLimit * 1000;
+  const initialSec = Math.max(0, Math.ceil((g.endTime - Date.now()) / 1000));
+
+  app.innerHTML = `
+    <h2>Turno de ${escapeHtml(state.guesser.name)}</h2>
+    <div class="timer-row">
+      <div class="timer-label">Tiempo restante</div>
+      <div class="timer-value${initialSec <= 10 ? ' urgent' : ''}" id="timer">${formatTime(initialSec)}</div>
+    </div>
+    ${hangmanSvg(errors)}
+    <div class="word-display">${renderWordDisplay()}</div>
+    <div class="info-row">
+      <div>Vidas: <strong>${livesLeft}</strong> / ${MAX_ERRORS}</div>
+      <div>Falladas: <span class="wrong-letters">${[...g.wrong].join(' ') || '—'}</span></div>
+    </div>
+    <div class="alphabet" id="alphabet"></div>
+    <p class="hint">También puedes pulsar las teclas del teclado.</p>
+  `;
+  startTimer();
+  const alpha = document.getElementById('alphabet');
+  ALPHABET.forEach(letter => {
+    const btn = document.createElement('button');
+    btn.textContent = letter;
+    if (g.guessed.has(letter)) { btn.classList.add('right'); btn.disabled = true; }
+    else if (g.wrong.has(letter)) { btn.classList.add('wrong'); btn.disabled = true; }
+    btn.onclick = () => guessLetter(letter);
+    alpha.appendChild(btn);
+  });
+}
+
+function renderWordDisplay() {
+  const g = state.game;
+  return g.word.split('').map(ch => {
+    if (ch === ' ') return '  ';
+    if (g.guessed.has(ch)) return ch;
+    return '_';
+  }).join(' ');
+}
+
+function guessLetter(letter) {
+  const g = state.game;
+  if (!g || state.screen !== 'guess') return;
+  if (g.guessed.has(letter) || g.wrong.has(letter)) return;
+  if (g.word.includes(letter)) {
+    g.guessed.add(letter);
+    if (isWordComplete()) { finishGame('guesser-wins'); return; }
+  } else {
+    g.wrong.add(letter);
+    if (g.wrong.size >= MAX_ERRORS) { finishGame('setter-wins'); return; }
+  }
+  render();
+}
+
+function isWordComplete() {
+  const g = state.game;
+  return g.word.split('').every(ch => ch === ' ' || g.guessed.has(ch));
+}
+
+async function finishGame(outcome) {
+  const g = state.game;
+  stopTimer();
+  const setter = state.setter, guesser = state.guesser;
+  let results;
+  if (outcome === 'guesser-wins') {
+    g.result = 'guesser';
+    bumpScore(guesser.id, +1, 'win');
+    bumpScore(setter.id, -1, 'loss');
+    results = [
+      { userId: guesser.id, result: 'win' },
+      { userId: setter.id, result: 'loss' },
+    ];
+  } else if (outcome === 'time-out') {
+    g.result = 'time-out';
+    bumpScore(setter.id, +1, 'win');
+    bumpScore(guesser.id, -1, 'loss');
+    results = [
+      { userId: setter.id, result: 'win' },
+      { userId: guesser.id, result: 'loss' },
+    ];
+  } else {
+    g.result = 'setter';
+    bumpScore(setter.id, +1, 'win');
+    bumpScore(guesser.id, 0, 'loss');
+    results = [
+      { userId: setter.id, result: 'win' },
+      { userId: guesser.id, result: 'loss' },
+    ];
+  }
+  state.screen = 'result';
+  state.resultStatus = { sending: true, ok: false, error: '' };
+  render();
+  try {
+    await submitResultToHub({
+      code: state.roomCode,
+      results,
+      notes: `Ahorcado: ${describeOutcome(outcome)}`,
+    });
+    state.resultStatus = { sending: false, ok: true, error: '' };
+  } catch (e) {
+    state.resultStatus = { sending: false, ok: false, error: e.message };
+  }
+  render();
+}
+
+function describeOutcome(outcome) {
+  if (outcome === 'guesser-wins') return 'palabra adivinada';
+  if (outcome === 'time-out') return 'tiempo agotado';
+  return 'sin vidas';
+}
+
+function bumpScore(userId, delta, kind) {
+  const s = state.sessionScores[userId] || { wins: 0, losses: 0, score: 0 };
+  s.score += delta;
+  if (kind === 'win') s.wins += 1;
+  if (kind === 'loss') s.losses += 1;
+  state.sessionScores[userId] = s;
+}
+
+function renderResult(app) {
+  const g = state.game;
+  const guesserName = state.guesser.name;
+  const setterName = state.setter.name;
+  let html = '';
+  if (g.result === 'guesser') {
+    html = `
+      <div class="result-message win">¡${escapeHtml(guesserName)} ha adivinado la palabra!</div>
+      <div class="reveal">La palabra era <strong>${escapeHtml(g.originalWord || g.word)}</strong></div>
+      <div class="reveal" style="font-size:17px;">${escapeHtml(guesserName)} +1 · ${escapeHtml(setterName)} −1</div>
+    `;
+  } else if (g.result === 'time-out') {
+    html = `
+      <div class="result-message lose">¡Se acabó el tiempo!</div>
+      <div class="reveal">La palabra era <strong>${escapeHtml(g.originalWord || g.word)}</strong></div>
+      <div class="reveal" style="font-size:17px;">${escapeHtml(setterName)} +1 · ${escapeHtml(guesserName)} −1</div>
+    `;
+  } else {
+    html = `
+      <div class="result-message lose">${escapeHtml(guesserName)} no ha adivinado la palabra</div>
+      ${hangmanSvg(MAX_ERRORS)}
+      <div class="reveal">La palabra era <strong>${escapeHtml(g.originalWord || g.word)}</strong></div>
+      <div class="reveal" style="font-size:17px;">${escapeHtml(setterName)} +1</div>
+    `;
+  }
+
+  let statusHtml = '';
+  if (state.resultStatus?.sending) {
+    statusHtml = `<div class="info-box center"><span class="spinner"></span> Enviando resultado al hub…</div>`;
+  } else if (state.resultStatus?.ok) {
+    statusHtml = `<div class="ok-box">Resultado guardado en el hub.</div>`;
+  } else if (state.resultStatus && !state.resultStatus.ok) {
+    statusHtml = `
+      <div class="error-box">No se pudo guardar el resultado: ${escapeHtml(state.resultStatus.error)}</div>
+      <div class="center"><button id="retry-result">Reintentar envío</button></div>
+    `;
+  }
+
+  app.innerHTML = html + statusHtml + `
+    <div class="center" style="margin-top:24px;">
+      <button class="big-button" id="again-btn" ${state.resultStatus?.sending ? 'disabled' : ''}>Otra partida</button>
+    </div>
+  `;
+
+  const retry = document.getElementById('retry-result');
+  if (retry) retry.onclick = async () => {
+    retry.disabled = true;
+    retry.innerHTML = '<span class="spinner"></span> Reintentando…';
+    state.resultStatus = { sending: true, ok: false, error: '' };
+    try {
+      const results = computeResultsFromGame();
+      await submitResultToHub({ code: state.roomCode, results, notes: `Ahorcado: ${describeOutcome(g.result === 'guesser' ? 'guesser-wins' : g.result === 'time-out' ? 'time-out' : 'setter-wins')}` });
+      state.resultStatus = { sending: false, ok: true, error: '' };
+    } catch (e) {
+      state.resultStatus = { sending: false, ok: false, error: e.message };
+    }
+    render();
+  };
+
+  document.getElementById('again-btn').onclick = async () => {
+    const btn = document.getElementById('again-btn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Cerrando sesión…';
+    await neonLogout();
+    await clearAccessCookie();
+    state.setter = null;
+    state.guesser = null;
+    state.game = null;
+    state.resultStatus = null;
+    state.pendingSetterId = null;
+    state.screen = 'choose-setter';
+    render();
+  };
+}
+
+function computeResultsFromGame() {
+  const g = state.game;
+  const setter = state.setter, guesser = state.guesser;
+  if (g.result === 'guesser') {
+    return [{ userId: guesser.id, result: 'win' }, { userId: setter.id, result: 'loss' }];
+  }
+  return [{ userId: setter.id, result: 'win' }, { userId: guesser.id, result: 'loss' }];
+}
+
+function hangmanSvg(errors) {
+  const parts = [
+    '<circle cx="130" cy="65" r="15" fill="none" stroke="#2c3e50" stroke-width="3"/>',
+    '<line x1="130" y1="80" x2="130" y2="140" stroke="#2c3e50" stroke-width="3"/>',
+    '<line x1="130" y1="95" x2="105" y2="120" stroke="#2c3e50" stroke-width="3"/>',
+    '<line x1="130" y1="95" x2="155" y2="120" stroke="#2c3e50" stroke-width="3"/>',
+    '<line x1="130" y1="140" x2="110" y2="180" stroke="#2c3e50" stroke-width="3"/>',
+    '<line x1="130" y1="140" x2="150" y2="180" stroke="#2c3e50" stroke-width="3"/>',
+  ];
+  return `
+    <svg class="hangman-svg" viewBox="0 0 200 240" width="200" height="240">
+      <line x1="20" y1="225" x2="180" y2="225" stroke="#8b6f47" stroke-width="5" stroke-linecap="round"/>
+      <line x1="50" y1="225" x2="50" y2="20" stroke="#8b6f47" stroke-width="5" stroke-linecap="round"/>
+      <line x1="50" y1="20" x2="130" y2="20" stroke="#8b6f47" stroke-width="5" stroke-linecap="round"/>
+      <line x1="130" y1="20" x2="130" y2="50" stroke="#8b6f47" stroke-width="3"/>
+      ${parts.slice(0, errors).join('')}
+    </svg>
+  `;
+}
+
+document.addEventListener('keydown', e => {
+  if (state.screen !== 'guess') return;
+  const key = e.key.toUpperCase();
+  if (ALPHABET.includes(key)) guessLetter(key);
+});
+
+// ---------- Init ----------
+async function init() {
+  loadTimePref();
+  const params = new URLSearchParams(location.search);
+  const code = (params.get('sala') || '').trim().toUpperCase();
+  if (!code) {
+    state.screen = 'error';
+    state.error = 'Falta el código de sala en la URL. Entra desde el hub.';
+    render();
+    return;
+  }
+  state.roomCode = code;
+  state.screen = 'loading';
+  render();
+  try {
+    const room = await loadRoom(code);
+    if (!room) throw new Error('Sala no encontrada o caducada.');
+    if (room.status && room.status !== 'open') {
+      throw new Error('Esta sala ya está cerrada.');
+    }
+    const players = (room.players || []).filter(p => p.role === 'player');
+    if (players.length !== 2) {
+      throw new Error('El ahorcado necesita exactamente 2 jugadores en la sala.');
+    }
+    state.room = room;
+    state.players = players;
+    state.sessionScores = {};
+    for (const p of players) {
+      state.sessionScores[p.userId] = { wins: 0, losses: 0, score: 0 };
+    }
+    // Por si quedó alguna sesión abierta: limpiar antes de empezar
+    await neonLogout();
+    await clearAccessCookie();
+    state.screen = 'choose-setter';
+    render();
+  } catch (e) {
+    state.screen = 'error';
+    state.error = e.message;
+    render();
+  }
+}
+
+init();
+</script>
+</body>
+</html>

@@ -1,0 +1,10 @@
+{
+  "name": "hangman",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Ahorcado para jugar en familia, integrado con el hub (one-page-to-rule-them-all).",
+  "engines": {
+    "node": ">=18"
+  }
+}
