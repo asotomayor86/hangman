@@ -20,6 +20,15 @@ import {
 import { submitHubResult } from './_lib/hub.js';
 
 export default async function handler(req, res) {
+  try {
+    return await handle(req, res);
+  } catch (e) {
+    console.error('POST /api/action crashed:', e);
+    return res.status(500).json({ error: e.message || 'Error interno' });
+  }
+}
+
+async function handle(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Método no permitido' });
   }

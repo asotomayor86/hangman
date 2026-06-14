@@ -514,6 +514,16 @@ async function clearAccessCookie() {
   try { await fetch('/api/access', { method: 'DELETE' }); } catch {}
 }
 
+function extractErrorText(data, status) {
+  if (!data) return `error ${status}`;
+  if (typeof data.error === 'string') return data.error;
+  if (data.error && typeof data.error === 'object') {
+    return data.error.message || data.error.code || JSON.stringify(data.error);
+  }
+  if (typeof data.message === 'string') return data.message;
+  return `error ${status}`;
+}
+
 async function fetchState() {
   const res = await fetch(`/api/state?code=${encodeURIComponent(ui.roomCode)}`, {
     headers: { Accept: 'application/json' },
@@ -521,7 +531,11 @@ async function fetchState() {
   if (res.status === 401) { const e = new Error('Sesión expirada'); e.status = 401; throw e; }
   let data = {};
   try { data = await res.json(); } catch {}
-  if (!res.ok) { const e = new Error(data.error || `state ${res.status}`); e.status = res.status; throw e; }
+  if (!res.ok) {
+    const e = new Error(extractErrorText(data, res.status));
+    e.status = res.status;
+    throw e;
+  }
   return data;
 }
 
@@ -533,7 +547,7 @@ async function dispatch(type, payload = {}) {
   });
   let data = {};
   try { data = await res.json(); } catch {}
-  if (!res.ok) throw new Error(data.error || `action ${res.status}`);
+  if (!res.ok) throw new Error(extractErrorText(data, res.status));
   // Tras una acción, refrescar el estado de inmediato (no esperar al siguiente poll)
   try {
     const s = await fetchState();
