@@ -392,14 +392,14 @@
 </div>
 
 <script type="module">
-// Dominio del hub. Si abrimos el juego desde un subdominio de familyhub.app
+// Dominio del hub. Si abrimos el juego desde un subdominio de gamehub.family
 // (entorno productivo con dominio propio), apuntamos al hub en la raíz para
-// que la cookie de Neon Auth (Domain=.familyhub.app) se comparta y no haya
+// que la cookie de Neon Auth (Domain=.gamehub.family) se comparta y no haya
 // que volver a hacer login. Si entramos por la URL de Vercel
 // (hangman-one-lyart.vercel.app), seguimos hablando con el hub en
 // one-page-to-rule-them-all.vercel.app igual que antes (sin SSO compartido).
-const HUB_URL = typeof location !== 'undefined' && location.hostname.endsWith('familyhub.app')
-  ? 'https://familyhub.app'
+const HUB_URL = typeof location !== 'undefined' && location.hostname.endsWith('gamehub.family')
+  ? 'https://gamehub.family'
   : 'https://one-page-to-rule-them-all.vercel.app';
 const ALPHABET = 'ABCDEFGHIJKLMNÑOPQRSTUVWXYZ'.split('');
 const MAX_ERRORS = 6;
