@@ -1,10 +1,13 @@
 {
   "name": "hangman",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
-  "description": "Ahorcado para jugar en familia, integrado con el hub (one-page-to-rule-them-all).",
+  "description": "Ahorcado para jugar en familia (multi-dispositivo), integrado con el hub.",
   "engines": {
     "node": ">=18"
+  },
+  "dependencies": {
+    "@upstash/redis": "^1.38.0"
   }
 }

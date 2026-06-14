@@ -89,38 +89,6 @@
     text-transform: uppercase;
   }
   .room-info strong { color: var(--gold); font-size: 16px; }
-  .scores {
-    display: flex;
-    gap: 12px;
-    justify-content: center;
-    margin-bottom: 22px;
-    flex-wrap: wrap;
-  }
-  .score {
-    background: var(--parchment);
-    border: 3px solid var(--leather);
-    border-radius: 6px;
-    padding: 10px 18px;
-    min-width: 140px;
-    box-shadow: 0 4px 14px rgba(0,0,0,0.5);
-    position: relative;
-  }
-  .score .name {
-    font-family: 'Rye', serif;
-    color: var(--leather-dark);
-    display: block;
-    margin-bottom: 2px;
-    font-size: 15px;
-    letter-spacing: 0.04em;
-  }
-  .score .value {
-    font-family: 'Rye', serif;
-    font-size: 32px;
-    color: var(--leather-dark);
-    line-height: 1;
-  }
-  .score .value.negative { color: var(--red-dark); }
-  .score .ratio { font-size: 11px; color: var(--muted); margin-top: 2px; letter-spacing: 0.05em; }
 
   /* Panel principal estilo pergamino/cartel WANTED */
   #app {
@@ -144,7 +112,6 @@
     border-radius: 3px;
   }
 
-  /* Inputs */
   input[type=text], input[type=email], input[type=password] {
     width: 100%;
     padding: 12px 14px;
@@ -168,7 +135,6 @@
     letter-spacing: 0.03em;
   }
 
-  /* Botones madera/cuero */
   button {
     font-family: 'Rye', serif;
     font-size: 17px;
@@ -220,7 +186,6 @@
 
   .center { text-align: center; }
 
-  /* Selector de tiempo */
   .time-options { display: flex; gap: 8px; flex-wrap: wrap; }
   .time-options button {
     flex: 1;
@@ -244,7 +209,6 @@
     text-shadow: 1px 1px 2px rgba(0,0,0,0.5);
   }
 
-  /* Palabra a adivinar */
   .word-display {
     font-family: 'Rye', serif;
     font-size: clamp(32px, 7vw, 44px);
@@ -256,7 +220,6 @@
     text-shadow: 2px 2px 0 rgba(212,184,134,0.55);
   }
 
-  /* Alfabeto */
   .alphabet {
     display: grid;
     grid-template-columns: repeat(9, 1fr);
@@ -270,7 +233,6 @@
     letter-spacing: 0;
   }
 
-  /* Cuenta atrás */
   .timer-row {
     text-align: center;
     margin: 18px 0;
@@ -374,6 +336,23 @@
     text-align: center;
   }
 
+  .player-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: rgba(255, 245, 214, 0.5);
+    border: 1px solid var(--leather);
+    border-radius: 6px;
+    padding: 10px 14px;
+    margin: 8px 0;
+    font-family: 'Rye', serif;
+    color: var(--leather-dark);
+  }
+  .player-row.you { border-color: var(--red); background: rgba(160,32,32,0.08); }
+  .player-row .name { font-size: 17px; }
+  .player-row .status { font-size: 13px; color: var(--muted); font-family: 'Special Elite', monospace; }
+  .player-row .status.ready { color: var(--green-dark); }
+
   .login-card {
     background: rgba(255, 245, 214, 0.55);
     padding: 18px;
@@ -409,7 +388,6 @@
 <div class="container">
   <h1>El Ahorcado</h1>
   <div id="room-info" class="room-info"></div>
-  <div id="scores"></div>
   <div id="app"></div>
 </div>
 
@@ -417,24 +395,22 @@
 const HUB_URL = 'https://one-page-to-rule-them-all.vercel.app';
 const ALPHABET = 'ABCDEFGHIJKLMNÑOPQRSTUVWXYZ'.split('');
 const MAX_ERRORS = 6;
-const TIME_KEY = 'ahorcado-time-limit';
+const POLL_MS = 1500;
 
-const state = {
-  screen: 'loading',
+const ui = {
+  screen: 'loading',   // loading | login | error | game
   roomCode: '',
-  room: null,
-  players: [],
-  timeLimit: 120,
-  error: '',
-  loggedIn: [],
-  setter: null,
-  guesser: null,
-  game: null,
-  sessionScores: {},
-  resultStatus: null,
+  roomMeta: null,      // { players: [{userId, name, role}] } del hub (público)
+  me: null,            // { id, name } después de login
+  state: null,         // estado vivo del servidor
+  errorMsg: '',
+  busy: false,         // bloquea polling cuando hay una acción crítica (ej. set-word)
+  submittedResultV: -1,// versión del estado en la que ya hemos disparado submit-result
 };
 
-let tickInterval = null;
+let pollTimer = null;
+let displayTimer = null;
+let lastRenderedV = -1;
 
 // ---------- Utilidades ----------
 function escapeHtml(s) {
@@ -445,15 +421,15 @@ function escapeHtml(s) {
 
 function normalize(s) {
   return s.toUpperCase()
-    .replace(/Á/g, 'A').replace(/À/g, 'A').replace(/Â/g, 'A').replace(/Ä/g, 'A')
-    .replace(/É/g, 'E').replace(/È/g, 'E').replace(/Ê/g, 'E').replace(/Ë/g, 'E')
-    .replace(/Í/g, 'I').replace(/Ì/g, 'I').replace(/Î/g, 'I').replace(/Ï/g, 'I')
-    .replace(/Ó/g, 'O').replace(/Ò/g, 'O').replace(/Ô/g, 'O').replace(/Ö/g, 'O')
-    .replace(/Ú/g, 'U').replace(/Ù/g, 'U').replace(/Û/g, 'U').replace(/Ü/g, 'U');
+    .replace(/Á|À|Â|Ä/g, 'A')
+    .replace(/É|È|Ê|Ë/g, 'E')
+    .replace(/Í|Ì|Î|Ï/g, 'I')
+    .replace(/Ó|Ò|Ô|Ö/g, 'O')
+    .replace(/Ú|Ù|Û|Ü/g, 'U');
 }
 
 function isValidWord(s) {
-  const n = normalize(s.trim());
+  const n = normalize(String(s).trim());
   if (n.length < 3) return false;
   if (!/^[A-ZÑ ]+$/.test(n)) return false;
   if (n.replace(/ /g, '').length < 3) return false;
@@ -466,20 +442,33 @@ function formatTime(sec) {
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
-function loadTimePref() {
-  try {
-    const raw = localStorage.getItem(TIME_KEY);
-    const n = parseInt(raw || '', 10);
-    if ([60, 120, 180].includes(n)) state.timeLimit = n;
-  } catch {}
+function maskedToDisplay(masked) {
+  if (!masked) return '';
+  return masked.split('').map(ch => ch === ' ' ? '  ' : ch).join(' ');
 }
 
-function saveTimePref() {
-  try { localStorage.setItem(TIME_KEY, String(state.timeLimit)); } catch {}
+function hangmanSvg(errors) {
+  const parts = [
+    '<circle cx="130" cy="65" r="15" fill="none" stroke="#2a1810" stroke-width="3"/>',
+    '<line x1="130" y1="80" x2="130" y2="140" stroke="#2a1810" stroke-width="3"/>',
+    '<line x1="130" y1="95" x2="105" y2="120" stroke="#2a1810" stroke-width="3"/>',
+    '<line x1="130" y1="95" x2="155" y2="120" stroke="#2a1810" stroke-width="3"/>',
+    '<line x1="130" y1="140" x2="110" y2="180" stroke="#2a1810" stroke-width="3"/>',
+    '<line x1="130" y1="140" x2="150" y2="180" stroke="#2a1810" stroke-width="3"/>',
+  ];
+  return `
+    <svg class="hangman-svg" viewBox="0 0 200 240" width="200" height="240">
+      <line x1="20" y1="225" x2="180" y2="225" stroke="#6b3410" stroke-width="6" stroke-linecap="round"/>
+      <line x1="50" y1="225" x2="50" y2="20" stroke="#6b3410" stroke-width="6" stroke-linecap="round"/>
+      <line x1="50" y1="20" x2="130" y2="20" stroke="#6b3410" stroke-width="6" stroke-linecap="round"/>
+      <line x1="130" y1="20" x2="130" y2="50" stroke="#3e1f08" stroke-width="3"/>
+      ${parts.slice(0, errors).join('')}
+    </svg>
+  `;
 }
 
-// ---------- API calls ----------
-async function loadRoom(code) {
+// ---------- API ----------
+async function loadRoomMeta(code) {
   const res = await fetch(`${HUB_URL}/api/rooms/${encodeURIComponent(code)}`, {
     headers: { Accept: 'application/json' },
   });
@@ -525,15 +514,31 @@ async function clearAccessCookie() {
   try { await fetch('/api/access', { method: 'DELETE' }); } catch {}
 }
 
-async function submitResultToHub(payload) {
-  const res = await fetch('/api/result', {
+async function fetchState() {
+  const res = await fetch(`/api/state?code=${encodeURIComponent(ui.roomCode)}`, {
+    headers: { Accept: 'application/json' },
+  });
+  if (res.status === 401) { const e = new Error('Sesión expirada'); e.status = 401; throw e; }
+  let data = {};
+  try { data = await res.json(); } catch {}
+  if (!res.ok) { const e = new Error(data.error || `state ${res.status}`); e.status = res.status; throw e; }
+  return data;
+}
+
+async function dispatch(type, payload = {}) {
+  const res = await fetch('/api/action', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
+    body: JSON.stringify({ code: ui.roomCode, type, payload }),
   });
   let data = {};
   try { data = await res.json(); } catch {}
-  if (!res.ok) throw new Error(data?.error || 'No se pudo enviar el resultado.');
+  if (!res.ok) throw new Error(data.error || `action ${res.status}`);
+  // Tras una acción, refrescar el estado de inmediato (no esperar al siguiente poll)
+  try {
+    const s = await fetchState();
+    onState(s);
+  } catch {}
   return data;
 }
 
@@ -552,74 +557,100 @@ async function verifyWord(rawWord) {
   return { ok: true };
 }
 
-// ---------- Timer ----------
-function startTimer() {
-  stopTimer();
-  tickInterval = setInterval(() => {
-    if (!state.game || !state.game.endTime || state.screen !== 'guess') {
-      stopTimer();
-      return;
+// ---------- Polling ----------
+function startPolling() {
+  stopPolling();
+  pollOnce();
+  pollTimer = setInterval(pollOnce, POLL_MS);
+}
+
+function stopPolling() {
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+}
+
+async function pollOnce() {
+  if (ui.busy) return;
+  try {
+    const s = await fetchState();
+    onState(s);
+  } catch (e) {
+    if (e.status === 401) {
+      stopPolling();
+      ui.screen = 'login';
+      render();
+    } else {
+      console.warn('poll:', e.message);
     }
-    const remaining = state.game.endTime - Date.now();
-    if (remaining <= 0) { stopTimer(); finishGame('time-out'); return; }
-    updateTimerDisplay(remaining);
-  }, 250);
+  }
 }
 
-function stopTimer() {
-  if (tickInterval) { clearInterval(tickInterval); tickInterval = null; }
+function onState(s) {
+  ui.state = s;
+  if (s.me) ui.me = s.me;
+  const changed = s.v !== lastRenderedV;
+  lastRenderedV = s.v;
+  if (changed) render();
+  updateTimerDisplay();
+
+  // Auto-submit del resultado en cuanto hay outcome y aún no se ha enviado
+  if (s.phase === 'result' && s.round?.result &&
+      !s.round.resultStatus?.ok && !s.round.resultStatus?.sending &&
+      ui.submittedResultV !== s.v) {
+    ui.submittedResultV = s.v;
+    dispatch('submit-result').catch(e => console.warn('submit-result:', e.message));
+  }
+  if (s.phase !== 'result') ui.submittedResultV = -1;
 }
 
-function updateTimerDisplay(remainingMs) {
+// ---------- Cronómetro de pantalla ----------
+function startDisplayTimer() {
+  stopDisplayTimer();
+  displayTimer = setInterval(updateTimerDisplay, 250);
+}
+function stopDisplayTimer() {
+  if (displayTimer) { clearInterval(displayTimer); displayTimer = null; }
+}
+function updateTimerDisplay() {
   const el = document.getElementById('timer');
   if (!el) return;
-  const sec = Math.max(0, Math.ceil(remainingMs / 1000));
+  const endTime = ui.state?.round?.endTime;
+  if (!endTime) return;
+  const remaining = Math.max(0, endTime - Date.now());
+  const sec = Math.ceil(remaining / 1000);
   el.textContent = formatTime(sec);
   el.classList.toggle('urgent', sec <= 10);
 }
 
-// ---------- Render orchestrator ----------
+// ---------- Render principal ----------
 function render() {
-  if (state.screen !== 'guess') stopTimer();
   renderRoomInfo();
-  renderScores();
   const app = document.getElementById('app');
   app.innerHTML = '';
-  switch (state.screen) {
-    case 'loading': return renderLoading(app);
-    case 'error': return renderError(app);
-    case 'login-1': return renderLogin1(app);
-    case 'login-2': return renderLogin2(app);
-    case 'choose-setter': return renderChooseSetter(app);
-    case 'enter-word': return renderEnterWord(app);
-    case 'handoff': return renderHandoff(app);
-    case 'guess': return renderGuess(app);
-    case 'result': return renderResult(app);
-  }
+
+  if (ui.screen === 'loading') return renderLoading(app);
+  if (ui.screen === 'error') return renderError(app);
+  if (ui.screen === 'login') { stopDisplayTimer(); return renderLogin(app); }
+
+  // Pantallas de juego: usa la fase del servidor
+  const phase = ui.state?.phase;
+  if (!phase) return renderLoading(app);
+
+  if (phase === 'guessing') startDisplayTimer();
+  else stopDisplayTimer();
+
+  if (phase === 'lobby') return renderLobby(app);
+  if (phase === 'writing') return renderWriting(app);
+  if (phase === 'guessing') return renderGuessing(app);
+  if (phase === 'result') return renderResult(app);
 }
 
 function renderRoomInfo() {
   const el = document.getElementById('room-info');
-  if (!state.room) { el.innerHTML = ''; return; }
-  const gameName = state.room.game?.name || 'Ahorcado';
-  el.innerHTML = `Sala <strong>${escapeHtml(state.room.code)}</strong> · ${escapeHtml(gameName)}`;
+  const code = ui.state?.code || ui.roomCode;
+  el.innerHTML = code ? `Sala <strong>${escapeHtml(code)}</strong> · Ahorcado` : '';
 }
 
-function renderScores() {
-  const el = document.getElementById('scores');
-  if (!state.players.length) { el.innerHTML = ''; return; }
-  el.innerHTML = state.players.map(p => {
-    const s = state.sessionScores[p.userId] || { wins: 0, losses: 0, score: 0 };
-    const cls = s.score < 0 ? 'value negative' : 'value';
-    return `<div class="score">
-      <span class="name">${escapeHtml(p.name)}</span>
-      <span class="${cls}">${s.score}</span>
-      <div class="ratio">${s.wins} ganadas · ${s.losses} perdidas</div>
-    </div>`;
-  }).join('');
-}
-
-// ---------- Screens ----------
+// ---------- Pantallas ----------
 function renderLoading(app) {
   app.innerHTML = `<h2>Cargando sala…</h2><div class="center"><div class="spinner"></div></div>`;
 }
@@ -627,7 +658,7 @@ function renderLoading(app) {
 function renderError(app) {
   app.innerHTML = `
     <h2>No se pudo entrar</h2>
-    <div class="error-box">${escapeHtml(state.error || 'Error desconocido')}</div>
+    <div class="error-box">${escapeHtml(ui.errorMsg || 'Error desconocido')}</div>
     <p class="hint">Vuelve al hub y crea una sala para entrar de nuevo.</p>
     <div class="center">
       <a href="${HUB_URL}"><button>Volver al hub</button></a>
@@ -635,59 +666,17 @@ function renderError(app) {
   `;
 }
 
-function renderChooseSetter(app) {
-  const [p1, p2] = state.loggedIn;
+function renderLogin(app) {
+  const players = (ui.roomMeta?.players || []).filter(p => p.role === 'player');
+  const intro = players.length === 2
+    ? `En esta sala: <strong>${escapeHtml(players[0].name)}</strong> y <strong>${escapeHtml(players[1].name)}</strong>. Cada uno entra con su cuenta del hub.`
+    : 'Inicia sesión con tu cuenta del hub.';
   app.innerHTML = `
-    <h2>¿Quién pone la palabra esta vez?</h2>
-    <p class="hint">El que pone la palabra pierde 1 punto si la adivina el otro. Si se acaba el tiempo, el que adivina pierde 1.</p>
-    <div class="form-row" style="margin-top:20px;">
-      <label>Tiempo por partida</label>
-      <div class="time-options">
-        <button data-time="60">1 minuto</button>
-        <button data-time="120">2 minutos</button>
-        <button data-time="180">3 minutos</button>
-      </div>
-    </div>
-    <div class="center" style="margin-top:24px;">
-      <button class="big-button" data-setter="${escapeHtml(p1.id)}">${escapeHtml(p1.name)} pone la palabra</button>
-      <button class="big-button" data-setter="${escapeHtml(p2.id)}">${escapeHtml(p2.name)} pone la palabra</button>
-    </div>
-  `;
-  setupTimeButtons(app);
-  app.querySelectorAll('button[data-setter]').forEach(btn => {
-    btn.onclick = () => {
-      const setterId = btn.dataset.setter;
-      state.setter = state.loggedIn.find(p => p.id === setterId);
-      state.guesser = state.loggedIn.find(p => p.id !== setterId);
-      state.screen = 'enter-word';
-      render();
-    };
-  });
-}
-
-function setupTimeButtons(container) {
-  const buttons = container.querySelectorAll('.time-options button');
-  const update = () => buttons.forEach(b => {
-    b.classList.toggle('selected', parseInt(b.dataset.time) === state.timeLimit);
-  });
-  buttons.forEach(b => {
-    b.onclick = () => {
-      state.timeLimit = parseInt(b.dataset.time);
-      saveTimePref();
-      update();
-    };
-  });
-  update();
-}
-
-function renderLoginForm(app, opts) {
-  const { title, infoHtml, validate, onSuccess } = opts;
-  app.innerHTML = `
-    <h2>${escapeHtml(title)}</h2>
-    <div class="info-box">${infoHtml}</div>
+    <h2>Inicia sesión</h2>
+    <div class="info-box">${intro}</div>
     <div class="login-card">
       <div class="form-row">
-        <label for="email">Email de la cuenta del hub</label>
+        <label for="email">Email</label>
         <input type="email" id="email" autocomplete="email" autocapitalize="off">
       </div>
       <div class="form-row">
@@ -718,17 +707,22 @@ function renderLoginForm(app, opts) {
     errBox.innerHTML = '';
     try {
       const user = await neonLogin(e, p);
-      const errMsg = validate(user);
-      if (errMsg) {
-        await neonLogout();
-        throw new Error(errMsg);
-      }
       await setAccessCookie(user);
-      onSuccess(user);
+      ui.me = user;
+      // Cargar estado para confirmar que estás en la sala
+      const s = await fetchState();
+      ui.state = s;
+      const me = s.players.find(p => p.userId === user.id);
+      if (me) ui.me = { id: me.userId, name: me.name };
+      ui.screen = 'game';
+      render();
+      startPolling();
     } catch (e) {
       btn.disabled = false;
       btn.textContent = 'Iniciar sesión';
       errBox.innerHTML = `<div class="error-box">${escapeHtml(e.message)}</div>`;
+      await neonLogout();
+      await clearAccessCookie();
     }
   };
   btn.onclick = submit;
@@ -737,56 +731,111 @@ function renderLoginForm(app, opts) {
   }));
 }
 
-function renderLogin1(app) {
-  const [p1, p2] = state.players;
-  renderLoginForm(app, {
-    title: 'Login del primer jugador',
-    infoHtml: `Cualquiera puede empezar: <strong>${escapeHtml(p1.name)}</strong> o <strong>${escapeHtml(p2.name)}</strong>.`,
-    validate: (user) => {
-      if (!state.players.find(p => p.userId === user.id)) {
-        return 'Esa cuenta no es jugador de esta sala.';
-      }
-      return null;
-    },
-    onSuccess: (user) => {
-      const room = state.players.find(p => p.userId === user.id);
-      state.loggedIn = [{ id: user.id, name: room.name }];
-      state.screen = 'login-2';
-      render();
-    },
-  });
-}
+function renderLobby(app) {
+  const s = ui.state;
+  const me = s.players.find(p => p.userId === ui.me?.id);
+  const other = s.players.find(p => p.userId !== ui.me?.id);
+  const bothJoined = s.players.every(p => p.joined);
 
-function renderLogin2(app) {
-  const first = state.loggedIn[0];
-  const other = state.players.find(p => p.userId !== first.id);
-  renderLoginForm(app, {
-    title: `Login del segundo jugador`,
-    infoHtml: `<strong>${escapeHtml(first.name)}</strong> ya está dentro. Ahora le toca a <strong>${escapeHtml(other.name)}</strong>.`,
-    validate: (user) => {
-      if (user.id === first.id) return 'Esa cuenta ya está registrada. Ahora tiene que entrar el otro jugador.';
-      if (!state.players.find(p => p.userId === user.id)) {
-        return 'Esa cuenta no es jugador de esta sala.';
-      }
-      return null;
-    },
-    onSuccess: (user) => {
-      const room = state.players.find(p => p.userId === user.id);
-      state.loggedIn.push({ id: user.id, name: room.name });
-      state.screen = 'choose-setter';
-      render();
-    },
-  });
-}
+  const playersHtml = s.players.map(p => {
+    const isMe = p.userId === ui.me?.id;
+    return `
+      <div class="player-row${isMe ? ' you' : ''}">
+        <span class="name">${escapeHtml(p.name)}${isMe ? ' (tú)' : ''}</span>
+        <span class="status${p.joined ? ' ready' : ''}">${p.joined ? '✓ En la sala' : 'Esperando…'}</span>
+      </div>
+    `;
+  }).join('');
 
-function renderEnterWord(app) {
+  let bodyHtml;
+  if (!bothJoined) {
+    bodyHtml = `
+      <div class="info-box center">
+        <span class="spinner"></span>
+        Esperando a <strong>${escapeHtml(other?.name || 'el otro jugador')}</strong>…
+      </div>
+      <p class="hint">Cuando entre, aparecerá el botón para empezar.</p>
+    `;
+  } else {
+    bodyHtml = `
+      <div class="form-row" style="margin-top:16px;">
+        <label>Tiempo por partida</label>
+        <div class="time-options">
+          <button data-time="60">1 min</button>
+          <button data-time="120">2 min</button>
+          <button data-time="180">3 min</button>
+        </div>
+      </div>
+      <h3 style="margin-top:18px;">¿Quién pone la palabra?</h3>
+      <div class="center">
+        ${s.players.map(p => `<button class="big-button" data-setter="${escapeHtml(p.userId)}">${escapeHtml(p.name)} pone la palabra</button>`).join('')}
+      </div>
+    `;
+  }
+
   app.innerHTML = `
-    <h2>${escapeHtml(state.setter.name)}, escribe la palabra</h2>
-    <p class="hint">El otro jugador no debe mirar. La palabra se ocultará mientras escribes.</p>
+    <h2>Sala lista</h2>
+    ${playersHtml}
+    ${bodyHtml}
+  `;
+
+  if (bothJoined) {
+    setupTimeButtons(app);
+    app.querySelectorAll('button[data-setter]').forEach(btn => {
+      btn.onclick = async () => {
+        app.querySelectorAll('button[data-setter]').forEach(b => b.disabled = true);
+        try {
+          await dispatch('choose-setter', { setterId: btn.dataset.setter });
+        } catch (e) {
+          app.querySelectorAll('button[data-setter]').forEach(b => b.disabled = false);
+          alert(e.message);
+        }
+      };
+    });
+  }
+}
+
+function setupTimeButtons(container) {
+  const buttons = container.querySelectorAll('.time-options button');
+  const update = () => buttons.forEach(b => {
+    b.classList.toggle('selected', parseInt(b.dataset.time) === ui.state?.timeLimit);
+  });
+  buttons.forEach(b => {
+    b.onclick = async () => {
+      buttons.forEach(x => x.disabled = true);
+      try {
+        await dispatch('set-time', { timeLimit: parseInt(b.dataset.time) });
+      } catch (e) {
+        alert(e.message);
+      } finally {
+        buttons.forEach(x => x.disabled = false);
+      }
+    };
+  });
+  update();
+}
+
+function renderWriting(app) {
+  const s = ui.state;
+  const isSetter = s.round.setterId === ui.me?.id;
+  const setter = s.players.find(p => p.userId === s.round.setterId);
+  const guesser = s.players.find(p => p.userId === s.round.guesserId);
+
+  if (!isSetter) {
+    app.innerHTML = `
+      <h2>${escapeHtml(setter.name)} está escribiendo la palabra</h2>
+      <div class="info-box center"><span class="spinner"></span> Espera tu turno para adivinar…</div>
+    `;
+    return;
+  }
+
+  app.innerHTML = `
+    <h2>Escribe la palabra</h2>
+    <p class="hint">El otro jugador no la verá hasta que termine la partida.</p>
     <div class="form-row">
       <input type="password" id="word-input" placeholder="Palabra o frase corta" autocomplete="off" maxlength="40">
     </div>
-    <p class="hint">Solo letras y espacios. Mínimo 3 letras. Las tildes se ignoran (la ñ sí cuenta). Se comprobará en el diccionario.</p>
+    <p class="hint">Solo letras y espacios. Mínimo 3 letras. Tildes ignoradas (la ñ sí cuenta). Se comprobará en el diccionario.</p>
     <button class="big-button" id="word-ok">Listo</button>
     <div id="verify-status"></div>
   `;
@@ -795,17 +844,16 @@ function renderEnterWord(app) {
   const status = document.getElementById('verify-status');
   input.focus();
 
-  const proceed = (raw) => {
-    state.game = {
-      originalWord: raw.trim(),
-      word: normalize(raw),
-      guessed: new Set(),
-      wrong: new Set(),
-      endTime: null,
-      result: null,
-    };
-    state.screen = 'handoff';
-    render();
+  const send = async (raw) => {
+    ui.busy = true;
+    try {
+      await dispatch('set-word', { word: raw });
+    } catch (e) {
+      alert('No se pudo enviar la palabra: ' + e.message);
+      btn.disabled = false;
+    } finally {
+      ui.busy = false;
+    }
   };
 
   const submit = async () => {
@@ -826,12 +874,12 @@ function renderEnterWord(app) {
           <button id="continue-anyway">Continuar igualmente</button>
           <button id="retry-verify" class="danger">Reintentar</button>
         </div>`;
-      document.getElementById('continue-anyway').onclick = () => proceed(raw);
+      document.getElementById('continue-anyway').onclick = () => send(raw);
       document.getElementById('retry-verify').onclick = () => { btn.disabled = false; status.innerHTML = ''; submit(); };
       return;
     }
     if (result.ok) {
-      proceed(raw);
+      send(raw);
     } else {
       status.innerHTML = `
         <div class="error-box" style="margin-top:16px;">
@@ -847,190 +895,106 @@ function renderEnterWord(app) {
         input.value = '';
         input.focus();
       };
-      document.getElementById('force-use').onclick = () => proceed(raw);
+      document.getElementById('force-use').onclick = () => send(raw);
     }
   };
   btn.onclick = submit;
   input.addEventListener('keydown', e => { if (e.key === 'Enter') submit(); });
 }
 
-function renderHandoff(app) {
-  app.innerHTML = `
-    <h2>Pasa el ordenador a ${escapeHtml(state.guesser.name)}</h2>
-    <p class="hint">${escapeHtml(state.setter.name)} ya ha escrito la palabra. Cuando ${escapeHtml(state.guesser.name)} esté listo, empieza.</p>
-    <div class="center">
-      <button class="big-button" id="begin-btn">Empezar a adivinar</button>
-    </div>
-  `;
-  document.getElementById('begin-btn').onclick = () => {
-    state.screen = 'guess';
-    render();
-  };
-}
-
-function renderGuess(app) {
-  const g = state.game;
-  const errors = g.wrong.size;
+function renderGuessing(app) {
+  const s = ui.state;
+  const r = s.round;
+  const isGuesser = r.guesserId === ui.me?.id;
+  const guesser = s.players.find(p => p.userId === r.guesserId);
+  const setter = s.players.find(p => p.userId === r.setterId);
+  const errors = r.wrong.length;
   const livesLeft = MAX_ERRORS - errors;
-  if (!g.endTime) g.endTime = Date.now() + state.timeLimit * 1000;
-  const initialSec = Math.max(0, Math.ceil((g.endTime - Date.now()) / 1000));
+  const remaining = Math.max(0, (r.endTime || 0) - Date.now());
+  const initialSec = Math.ceil(remaining / 1000);
+
+  const youInfo = isGuesser
+    ? `Tu turno, ${escapeHtml(guesser.name)}.`
+    : `Mira cómo ${escapeHtml(guesser.name)} intenta adivinar tu palabra.`;
 
   app.innerHTML = `
-    <h2>Turno de ${escapeHtml(state.guesser.name)}</h2>
+    <h2>${escapeHtml(youInfo)}</h2>
     <div class="timer-row">
       <div class="timer-label">Tiempo restante</div>
       <div class="timer-value${initialSec <= 10 ? ' urgent' : ''}" id="timer">${formatTime(initialSec)}</div>
     </div>
     ${hangmanSvg(errors)}
-    <div class="word-display">${renderWordDisplay()}</div>
+    <div class="word-display">${maskedToDisplay(r.maskedWord)}</div>
     <div class="info-row">
       <div>Vidas: <strong>${livesLeft}</strong> / ${MAX_ERRORS}</div>
-      <div>Falladas: <span class="wrong-letters">${[...g.wrong].join(' ') || '—'}</span></div>
+      <div>Falladas: <span class="wrong-letters">${r.wrong.join(' ') || '—'}</span></div>
     </div>
     <div class="alphabet" id="alphabet"></div>
-    <p class="hint">También puedes pulsar las teclas del teclado.</p>
+    <p class="hint">${isGuesser ? 'Pulsa las letras o usa el teclado.' : 'Solo el que adivina puede pulsar letras.'}</p>
   `;
-  startTimer();
   const alpha = document.getElementById('alphabet');
+  const guessedSet = new Set(r.guessed);
+  const wrongSet = new Set(r.wrong);
   ALPHABET.forEach(letter => {
     const btn = document.createElement('button');
     btn.textContent = letter;
-    if (g.guessed.has(letter)) { btn.classList.add('right'); btn.disabled = true; }
-    else if (g.wrong.has(letter)) { btn.classList.add('wrong'); btn.disabled = true; }
-    btn.onclick = () => guessLetter(letter);
+    if (guessedSet.has(letter)) { btn.classList.add('right'); btn.disabled = true; }
+    else if (wrongSet.has(letter)) { btn.classList.add('wrong'); btn.disabled = true; }
+    else if (!isGuesser) { btn.disabled = true; }
+    btn.onclick = async () => {
+      btn.disabled = true;
+      try {
+        await dispatch('guess-letter', { letter });
+      } catch (e) {
+        btn.disabled = false;
+        alert(e.message);
+      }
+    };
     alpha.appendChild(btn);
   });
 }
 
-function renderWordDisplay() {
-  const g = state.game;
-  return g.word.split('').map(ch => {
-    if (ch === ' ') return '  ';
-    if (g.guessed.has(ch)) return ch;
-    return '_';
-  }).join(' ');
-}
-
-function guessLetter(letter) {
-  const g = state.game;
-  if (!g || state.screen !== 'guess') return;
-  if (g.guessed.has(letter) || g.wrong.has(letter)) return;
-  if (g.word.includes(letter)) {
-    g.guessed.add(letter);
-    if (isWordComplete()) { finishGame('guesser-wins'); return; }
-  } else {
-    g.wrong.add(letter);
-    if (g.wrong.size >= MAX_ERRORS) { finishGame('setter-wins'); return; }
-  }
-  render();
-}
-
-function isWordComplete() {
-  const g = state.game;
-  return g.word.split('').every(ch => ch === ' ' || g.guessed.has(ch));
-}
-
-async function finishGame(outcome) {
-  const g = state.game;
-  stopTimer();
-  const setter = state.setter, guesser = state.guesser;
-  let results;
-  if (outcome === 'guesser-wins') {
-    g.result = 'guesser';
-    bumpScore(guesser.id, +1, 'win');
-    bumpScore(setter.id, -1, 'loss');
-    results = [
-      { userId: guesser.id, result: 'win' },
-      { userId: setter.id, result: 'loss' },
-    ];
-  } else if (outcome === 'time-out') {
-    g.result = 'time-out';
-    bumpScore(setter.id, +1, 'win');
-    bumpScore(guesser.id, -1, 'loss');
-    results = [
-      { userId: setter.id, result: 'win' },
-      { userId: guesser.id, result: 'loss' },
-    ];
-  } else {
-    g.result = 'setter';
-    bumpScore(setter.id, +1, 'win');
-    bumpScore(guesser.id, 0, 'loss');
-    results = [
-      { userId: setter.id, result: 'win' },
-      { userId: guesser.id, result: 'loss' },
-    ];
-  }
-  state.screen = 'result';
-  state.resultStatus = { sending: true, ok: false, error: '' };
-  render();
-  try {
-    await submitResultToHub({
-      code: state.roomCode,
-      results,
-      notes: `Ahorcado: ${describeOutcome(outcome)}`,
-    });
-    state.resultStatus = { sending: false, ok: true, error: '' };
-  } catch (e) {
-    state.resultStatus = { sending: false, ok: false, error: e.message };
-  }
-  render();
-}
-
-function describeOutcome(outcome) {
-  if (outcome === 'guesser-wins') return 'palabra adivinada';
-  if (outcome === 'time-out') return 'tiempo agotado';
-  return 'sin vidas';
-}
-
-function bumpScore(userId, delta, kind) {
-  const s = state.sessionScores[userId] || { wins: 0, losses: 0, score: 0 };
-  s.score += delta;
-  if (kind === 'win') s.wins += 1;
-  if (kind === 'loss') s.losses += 1;
-  state.sessionScores[userId] = s;
-}
-
 function renderResult(app) {
-  const g = state.game;
-  const guesserName = state.guesser.name;
-  const setterName = state.setter.name;
+  const s = ui.state;
+  const r = s.round;
+  const guesser = s.players.find(p => p.userId === r.guesserId);
+  const setter = s.players.find(p => p.userId === r.setterId);
   let html = '';
-  if (g.result === 'guesser') {
+  if (r.result === 'guesser') {
     html = `
-      <div class="result-message win">¡${escapeHtml(guesserName)} ha adivinado la palabra!</div>
-      <div class="reveal">La palabra era <strong>${escapeHtml(g.originalWord || g.word)}</strong></div>
-      <div class="reveal" style="font-size:17px;">${escapeHtml(guesserName)} +1 · ${escapeHtml(setterName)} −1</div>
+      <div class="result-message win">¡${escapeHtml(guesser.name)} ha adivinado la palabra!</div>
+      <div class="reveal">La palabra era <strong>${escapeHtml(r.originalWord || r.maskedWord)}</strong></div>
     `;
-  } else if (g.result === 'time-out') {
+  } else if (r.result === 'time-out') {
     html = `
       <div class="result-message lose">¡Se acabó el tiempo!</div>
-      <div class="reveal">La palabra era <strong>${escapeHtml(g.originalWord || g.word)}</strong></div>
-      <div class="reveal" style="font-size:17px;">${escapeHtml(setterName)} +1 · ${escapeHtml(guesserName)} −1</div>
+      <div class="reveal">La palabra era <strong>${escapeHtml(r.originalWord || r.maskedWord)}</strong></div>
     `;
   } else {
     html = `
-      <div class="result-message lose">${escapeHtml(guesserName)} no ha adivinado la palabra</div>
+      <div class="result-message lose">${escapeHtml(guesser.name)} no ha adivinado la palabra</div>
       ${hangmanSvg(MAX_ERRORS)}
-      <div class="reveal">La palabra era <strong>${escapeHtml(g.originalWord || g.word)}</strong></div>
-      <div class="reveal" style="font-size:17px;">${escapeHtml(setterName)} +1</div>
+      <div class="reveal">La palabra era <strong>${escapeHtml(r.originalWord || r.maskedWord)}</strong></div>
     `;
   }
 
   let statusHtml = '';
-  if (state.resultStatus?.sending) {
-    statusHtml = `<div class="info-box center"><span class="spinner"></span> Enviando resultado al hub…</div>`;
-  } else if (state.resultStatus?.ok) {
+  if (r.resultStatus?.sending) {
+    statusHtml = `<div class="info-box center"><span class="spinner"></span> Guardando resultado…</div>`;
+  } else if (r.resultStatus?.ok) {
     statusHtml = `<div class="ok-box">Resultado guardado en el hub.</div>`;
-  } else if (state.resultStatus && !state.resultStatus.ok) {
+  } else if (r.resultStatus?.error) {
     statusHtml = `
-      <div class="error-box">No se pudo guardar el resultado: ${escapeHtml(state.resultStatus.error)}</div>
+      <div class="error-box">No se pudo guardar el resultado: ${escapeHtml(r.resultStatus.error)}</div>
       <div class="center"><button id="retry-result">Reintentar envío</button></div>
     `;
+  } else {
+    statusHtml = `<div class="info-box center"><span class="spinner"></span> Enviando resultado…</div>`;
   }
 
   app.innerHTML = html + statusHtml + `
-    <div class="center" style="margin-top:24px;">
-      <button class="big-button" id="again-btn" ${state.resultStatus?.sending ? 'disabled' : ''}>Otra partida</button>
+    <div class="center" style="margin-top:18px;">
+      <button class="big-button" id="again-btn">Otra partida</button>
     </div>
   `;
 
@@ -1038,101 +1002,90 @@ function renderResult(app) {
   if (retry) retry.onclick = async () => {
     retry.disabled = true;
     retry.innerHTML = '<span class="spinner"></span> Reintentando…';
-    state.resultStatus = { sending: true, ok: false, error: '' };
+    try { await dispatch('submit-result'); } catch (e) { alert(e.message); }
+    retry.disabled = false;
+  };
+
+  document.getElementById('again-btn').onclick = async () => {
+    const btn = document.getElementById('again-btn');
+    btn.disabled = true;
     try {
-      const results = computeResultsFromGame();
-      await submitResultToHub({ code: state.roomCode, results, notes: `Ahorcado: ${describeOutcome(g.result === 'guesser' ? 'guesser-wins' : g.result === 'time-out' ? 'time-out' : 'setter-wins')}` });
-      state.resultStatus = { sending: false, ok: true, error: '' };
+      await dispatch('next-round');
     } catch (e) {
-      state.resultStatus = { sending: false, ok: false, error: e.message };
+      btn.disabled = false;
+      alert(e.message);
     }
-    render();
-  };
-
-  document.getElementById('again-btn').onclick = () => {
-    state.setter = null;
-    state.guesser = null;
-    state.game = null;
-    state.resultStatus = null;
-    state.screen = 'choose-setter';
-    render();
   };
 }
 
-function computeResultsFromGame() {
-  const g = state.game;
-  const setter = state.setter, guesser = state.guesser;
-  if (g.result === 'guesser') {
-    return [{ userId: guesser.id, result: 'win' }, { userId: setter.id, result: 'loss' }];
-  }
-  return [{ userId: setter.id, result: 'win' }, { userId: guesser.id, result: 'loss' }];
-}
-
-function hangmanSvg(errors) {
-  const parts = [
-    '<circle cx="130" cy="65" r="15" fill="none" stroke="#2a1810" stroke-width="3"/>',
-    '<line x1="130" y1="80" x2="130" y2="140" stroke="#2a1810" stroke-width="3"/>',
-    '<line x1="130" y1="95" x2="105" y2="120" stroke="#2a1810" stroke-width="3"/>',
-    '<line x1="130" y1="95" x2="155" y2="120" stroke="#2a1810" stroke-width="3"/>',
-    '<line x1="130" y1="140" x2="110" y2="180" stroke="#2a1810" stroke-width="3"/>',
-    '<line x1="130" y1="140" x2="150" y2="180" stroke="#2a1810" stroke-width="3"/>',
-  ];
-  return `
-    <svg class="hangman-svg" viewBox="0 0 200 240" width="200" height="240">
-      <line x1="20" y1="225" x2="180" y2="225" stroke="#6b3410" stroke-width="6" stroke-linecap="round"/>
-      <line x1="50" y1="225" x2="50" y2="20" stroke="#6b3410" stroke-width="6" stroke-linecap="round"/>
-      <line x1="50" y1="20" x2="130" y2="20" stroke="#6b3410" stroke-width="6" stroke-linecap="round"/>
-      <line x1="130" y1="20" x2="130" y2="50" stroke="#3e1f08" stroke-width="3"/>
-      ${parts.slice(0, errors).join('')}
-    </svg>
-  `;
-}
-
+// ---------- Teclado ----------
 document.addEventListener('keydown', e => {
-  if (state.screen !== 'guess') return;
+  if (ui.state?.phase !== 'guessing') return;
+  if (ui.state?.round?.guesserId !== ui.me?.id) return;
   const key = e.key.toUpperCase();
-  if (ALPHABET.includes(key)) guessLetter(key);
+  if (!ALPHABET.includes(key)) return;
+  const r = ui.state.round;
+  if (r.guessed.includes(key) || r.wrong.includes(key)) return;
+  dispatch('guess-letter', { letter: key }).catch(err => console.warn(err.message));
 });
 
 // ---------- Init ----------
 async function init() {
-  loadTimePref();
   const params = new URLSearchParams(location.search);
   const code = (params.get('sala') || '').trim().toUpperCase();
   if (!code) {
-    state.screen = 'error';
-    state.error = 'Falta el código de sala en la URL. Entra desde el hub.';
+    ui.screen = 'error';
+    ui.errorMsg = 'Falta el código de sala en la URL. Entra desde el hub.';
     render();
     return;
   }
-  state.roomCode = code;
-  state.screen = 'loading';
+  ui.roomCode = code;
   render();
+
+  // Pre-cargamos los nombres de la sala (público) para mostrarlos en el login
   try {
-    const room = await loadRoom(code);
-    if (!room) throw new Error('Sala no encontrada o caducada.');
+    const room = await loadRoomMeta(code);
+    if (!room) {
+      ui.screen = 'error';
+      ui.errorMsg = 'Sala no encontrada o caducada.';
+      return render();
+    }
     if (room.status && room.status !== 'open') {
-      throw new Error('Esta sala ya está cerrada.');
+      ui.screen = 'error';
+      ui.errorMsg = 'Esta sala ya está cerrada.';
+      return render();
     }
     const players = (room.players || []).filter(p => p.role === 'player');
     if (players.length !== 2) {
-      throw new Error('El ahorcado necesita exactamente 2 jugadores en la sala.');
+      ui.screen = 'error';
+      ui.errorMsg = 'El ahorcado necesita exactamente 2 jugadores en la sala.';
+      return render();
     }
-    state.room = room;
-    state.players = players;
-    state.loggedIn = [];
-    state.sessionScores = {};
-    for (const p of players) {
-      state.sessionScores[p.userId] = { wins: 0, losses: 0, score: 0 };
-    }
-    // Por si quedó alguna sesión abierta: limpiar antes de empezar
-    await neonLogout();
-    await clearAccessCookie();
-    state.screen = 'login-1';
-    render();
+    ui.roomMeta = room;
   } catch (e) {
-    state.screen = 'error';
-    state.error = e.message;
+    ui.screen = 'error';
+    ui.errorMsg = e.message;
+    return render();
+  }
+
+  // Intentamos cargar el estado por si ya hay cookie válida
+  try {
+    const s = await fetchState();
+    onState(s);
+    if (!ui.me) {
+      ui.screen = 'login';
+      return render();
+    }
+    ui.screen = 'game';
+    render();
+    startPolling();
+  } catch (e) {
+    if (e.status === 401 || e.status === 403) {
+      ui.screen = 'login';
+      return render();
+    }
+    ui.screen = 'error';
+    ui.errorMsg = e.message;
     render();
   }
 }
