@@ -1,31 +1,38 @@
-// Estado vivo de una partida de hangman en Upstash Redis.
+// Estado vivo de una partida de hangman en Neon Postgres.
 //
-// Clave: hangman:room:{CODE}  →  JSON con el estado completo de la sala
-// TTL: 24h (las partidas familiares duran como mucho una sesión).
+// Tabla: hangman_rooms ( code text pk, state jsonb, updated_at timestamptz,
+//                        expires_at timestamptz )
+// Se crea en caliente la primera vez que se accede (CREATE TABLE IF NOT EXISTS).
 //
 // El cliente NUNCA debe recibir la palabra completa (a no ser que sea el setter
 // o estemos en pantalla de resultado). Para eso existe sanitizeForUser().
 
-import { Redis } from '@upstash/redis';
+import { neon } from '@neondatabase/serverless';
 
-const TTL_SECONDS = 60 * 60 * 24;
+let sqlInstance = null;
+let schemaReady = false;
 
-// Lazy init: si no hay Redis configurado, lanzamos error solo al usarlo,
-// no al cargar el módulo (así otros endpoints siguen funcionando).
-let redisInstance = null;
-function redis() {
-  if (redisInstance) return redisInstance;
-  const url = process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL;
-  const token = process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN;
-  if (!url || !token) {
-    throw new Error('Falta configurar Redis (UPSTASH_REDIS_REST_URL/TOKEN o KV_REST_API_*).');
-  }
-  redisInstance = new Redis({ url, token });
-  return redisInstance;
+function sql() {
+  if (sqlInstance) return sqlInstance;
+  const url = process.env.DATABASE_URL || process.env.POSTGRES_URL;
+  if (!url) throw new Error('Falta DATABASE_URL en las variables del proyecto.');
+  sqlInstance = neon(url);
+  return sqlInstance;
 }
 
-function key(code) {
-  return `hangman:room:${code}`;
+async function ensureSchema() {
+  if (schemaReady) return;
+  const q = sql();
+  await q`
+    CREATE TABLE IF NOT EXISTS hangman_rooms (
+      code TEXT PRIMARY KEY,
+      state JSONB NOT NULL,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      expires_at TIMESTAMPTZ NOT NULL DEFAULT NOW() + INTERVAL '24 hours'
+    )
+  `;
+  await q`CREATE INDEX IF NOT EXISTS hangman_rooms_expires_at ON hangman_rooms(expires_at)`;
+  schemaReady = true;
 }
 
 /** Crea un estado nuevo de sala (lobby con dos jugadores aún sin entrar). */
@@ -46,22 +53,37 @@ export function freshState(code, players, timeLimit = 120) {
   };
 }
 
-/** Devuelve el estado actual de la sala (o null si no existe). */
+/** Devuelve el estado actual de la sala (o null si no existe o ha caducado). */
 export async function getState(code) {
-  return await redis().get(key(code));
+  await ensureSchema();
+  const rows = await sql()`
+    SELECT state FROM hangman_rooms
+    WHERE code = ${code} AND expires_at > NOW()
+  `;
+  return rows[0]?.state ?? null;
 }
 
-/** Persiste el estado (con TTL). */
+/** Persiste el estado (renovando TTL a 24h). */
 export async function saveState(state) {
+  await ensureSchema();
   state.v += 1;
   state.updatedAt = Date.now();
-  await redis().set(key(state.code), state, { ex: TTL_SECONDS });
+  await sql()`
+    INSERT INTO hangman_rooms (code, state, updated_at, expires_at)
+    VALUES (${state.code}, ${JSON.stringify(state)}::jsonb, NOW(),
+            NOW() + INTERVAL '24 hours')
+    ON CONFLICT (code) DO UPDATE
+      SET state = EXCLUDED.state,
+          updated_at = NOW(),
+          expires_at = NOW() + INTERVAL '24 hours'
+  `;
   return state;
 }
 
-/** Borra el estado (al final de la sala o por TTL). */
+/** Borra el estado. */
 export async function deleteState(code) {
-  await redis().del(key(code));
+  await ensureSchema();
+  await sql()`DELETE FROM hangman_rooms WHERE code = ${code}`;
 }
 
 /** Normaliza una palabra: mayúsculas, sin tildes, mantiene ñ. */
