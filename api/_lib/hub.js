@@ -52,3 +52,47 @@ export async function submitHubResult(code, payload) {
   try { body = await res.json(); } catch { /* sin cuerpo */ }
   return { ok: res.ok, status: res.status, ...body };
 }
+
+/**
+ * Envía el resultado de la ronda actual al hub si todavía no se ha enviado y
+ * actualiza `state.round.resultStatus` in-place. Idempotente: si ya está enviado
+ * o en curso, no hace nada. Se invoca en cuanto la fase cambia a 'result', sin
+ * esperar a la cuenta atrás.
+ */
+export async function submitMatchResultToHub(state, code) {
+  if (state.phase !== 'result' || !state.round?.result) return;
+  if (state.round.resultStatus?.ok) return;
+  if (state.round.resultStatus?.sending) return;
+
+  state.round.resultStatus = { sending: true, ok: false, error: null };
+
+  const { setterId, guesserId, result } = state.round;
+  let results;
+  if (result === 'guesser') {
+    results = [
+      { userId: guesserId, result: 'win' },
+      { userId: setterId, result: 'loss' },
+    ];
+  } else {
+    results = [
+      { userId: setterId, result: 'win' },
+      { userId: guesserId, result: 'loss' },
+    ];
+  }
+  const motivoLog =
+    result === 'guesser' ? 'palabra adivinada'
+    : result === 'time-out' ? 'tiempo agotado'
+    : 'sin vidas';
+
+  try {
+    const out = await submitHubResult(code, {
+      results,
+      notes: `Ahorcado: ${motivoLog}`,
+    });
+    state.round.resultStatus = out.ok
+      ? { sending: false, ok: true, error: null }
+      : { sending: false, ok: false, error: out.error || `Hub respondió ${out.status}` };
+  } catch (e) {
+    state.round.resultStatus = { sending: false, ok: false, error: e.message };
+  }
+}

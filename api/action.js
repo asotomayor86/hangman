@@ -18,7 +18,7 @@ import {
   isValidWord,
   isWordComplete,
 } from './_lib/state.js';
-import { submitHubResult } from './_lib/hub.js';
+import { submitMatchResultToHub } from './_lib/hub.js';
 
 export default async function handler(req, res) {
   try {
@@ -65,7 +65,7 @@ async function handle(req, res) {
         actionGuessLetter(state, user, payload);
         break;
       case 'submit-result':
-        await actionSubmitResult(state, code);
+        // Reintento manual: la lógica vive en el helper.
         break;
       case 'next-round':
         actionNextRound(state);
@@ -75,6 +75,13 @@ async function handle(req, res) {
     }
   } catch (e) {
     return res.status(400).json({ error: e.message });
+  }
+
+  // Si acabamos de transicionar a 'result' (por jugar la letra que cierra la
+  // ronda, por timeout, o por reintento manual con 'submit-result'), enviamos
+  // ya el resultado al hub: no esperamos a la cuenta atrás ni a un poll.
+  if (state.phase === 'result' && state.round?.result) {
+    await submitMatchResultToHub(state, code);
   }
 
   await saveState(state);

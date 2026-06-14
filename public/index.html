@@ -501,6 +501,28 @@ async function neonLogout() {
   } catch {}
 }
 
+/**
+ * Intenta heredar la sesión ya iniciada en el hub: si el navegador tiene la
+ * cookie del hub (mismo Neon Auth), no hace falta pedir email+contraseña aquí.
+ * Devuelve {id, name} o null si no hay sesión o el navegador bloquea la cookie
+ * cross-origin (SameSite=Lax sin SameSite=None pasa esto en algunos navegadores).
+ */
+async function tryHubSession() {
+  try {
+    const res = await fetch(`${HUB_URL}/api/auth/get-session`, {
+      credentials: 'include',
+      headers: { Accept: 'application/json' },
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const user = data?.user || data?.data?.user || data?.session?.user;
+    if (!user?.id) return null;
+    return { id: user.id, name: user.name || user.email || '' };
+  } catch {
+    return null;
+  }
+}
+
 async function setAccessCookie(user) {
   const res = await fetch('/api/access', {
     method: 'POST',
@@ -1139,26 +1161,48 @@ async function init() {
     return render();
   }
 
-  // Intentamos cargar el estado por si ya hay cookie válida
+  // 1. Intentamos cargar el estado por si ya hay cookie LOCAL del juego.
   try {
     const s = await fetchState();
     onState(s);
-    if (!ui.me) {
-      ui.screen = 'login';
-      return render();
+    if (ui.me) {
+      ui.screen = 'game';
+      render();
+      startPolling();
+      return;
     }
-    ui.screen = 'game';
-    render();
-    startPolling();
   } catch (e) {
-    if (e.status === 401 || e.status === 403) {
-      ui.screen = 'login';
+    if (e.status !== 401 && e.status !== 403) {
+      ui.screen = 'error';
+      ui.errorMsg = e.message;
       return render();
     }
-    ui.screen = 'error';
-    ui.errorMsg = e.message;
-    render();
   }
+
+  // 2. Sin cookie local: probamos a heredar la sesión del hub (SSO blando).
+  //    Si el navegador acepta la cookie cross-origin, no hay que escribir
+  //    contraseña aquí — usamos la identidad del hub directamente.
+  const hubUser = ui.roomMeta?.players?.find(p => p.role === 'player')
+    ? await tryHubSession()
+    : null;
+  if (hubUser && ui.roomMeta.players.some(p => p.userId === hubUser.id)) {
+    try {
+      await setAccessCookie(hubUser);
+      const s = await fetchState();
+      onState(s);
+      if (ui.me) {
+        ui.screen = 'game';
+        render();
+        startPolling();
+        return;
+      }
+    } catch {
+      /* caemos al login con email+contraseña */
+    }
+  }
+
+  ui.screen = 'login';
+  render();
 }
 
 init();

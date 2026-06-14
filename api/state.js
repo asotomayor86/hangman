@@ -5,7 +5,7 @@
 
 import { requireUser } from './_lib/auth.js';
 import { getState, saveState, freshState, sanitizeForUser, applyTimeoutIfDue } from './_lib/state.js';
-import { getHubRoom } from './_lib/hub.js';
+import { getHubRoom, submitMatchResultToHub } from './_lib/hub.js';
 
 export default async function handler(req, res) {
   try {
@@ -65,6 +65,12 @@ async function handle(req, res) {
   }
 
   const timeoutTriggered = applyTimeoutIfDue(state);
+
+  // Si el timeout acaba de cerrar la ronda, enviamos el resultado al hub ya,
+  // sin esperar a la cuenta atrás ni a una acción posterior del cliente.
+  if (timeoutTriggered) {
+    await submitMatchResultToHub(state, code);
+  }
 
   if (created || joined || timeoutTriggered) {
     await saveState(state);
