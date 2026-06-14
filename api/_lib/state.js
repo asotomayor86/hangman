@@ -9,6 +9,10 @@
 
 import { neon } from '@neondatabase/serverless';
 
+// Tiempos de espera entre rondas (cuenta atrás visible en el cliente).
+const INTERMISSION_MS = 6_000;
+const RETURN_MS = 6_000;
+
 let sqlInstance = null;
 let schemaReady = false;
 
@@ -36,7 +40,7 @@ async function ensureSchema() {
 }
 
 /** Crea un estado nuevo de sala (lobby con dos jugadores aún sin entrar). */
-export function freshState(code, players, timeLimit = 120) {
+export function freshState(code, players, bestOf = 1, timeLimit = 120) {
   return {
     code,
     v: 1,
@@ -49,6 +53,14 @@ export function freshState(code, players, timeLimit = 120) {
       joinedAt: null,
     })),
     timeLimit,
+    // Serie al mejor de N: bestOf viene de la sala del hub (winsNeeded). Las
+    // partidas se enlazan hasta que un jugador llega a `bestOf` victorias.
+    bestOf: Math.max(1, Number(bestOf) || 1),
+    seriesWins: Object.fromEntries(players.map(p => [p.userId, 0])),
+    seriesGame: 1,
+    seriesWinner: null,
+    resumeAt: null,
+    returnAt: null,
     round: null,
   };
 }
@@ -138,6 +150,17 @@ export function sanitizeForUser(state, userId) {
     timeLimit: state.timeLimit,
     players: state.players,
     me: me ? { id: me.userId, name: me.name } : null,
+    // Serie best-of (siempre presente). `serverNow` deja al cliente corregir
+    // el desfase de reloj para las cuentas atrás resumeAt / returnAt.
+    series: {
+      bestOf: state.bestOf || 1,
+      wins: state.seriesWins || {},
+      gameNumber: state.seriesGame || 1,
+      winner: state.seriesWinner || null,
+      resumeAt: state.resumeAt || null,
+      returnAt: state.returnAt || null,
+      serverNow: Date.now(),
+    },
   };
   if (state.round) {
     const r = state.round;
@@ -170,5 +193,33 @@ export function applyTimeoutIfDue(state) {
   if (Date.now() < state.round.endTime) return false;
   state.round.result = 'time-out';
   state.phase = 'result';
+  applyMatchOutcome(state);
   return true;
+}
+
+/**
+ * Idempotente: tras transicionar a fase 'result' con un outcome, suma la
+ * victoria de esta ronda al marcador de la serie y decide si la serie ha
+ * terminado (returnAt) o continúa (resumeAt).
+ */
+export function applyMatchOutcome(state) {
+  if (state.phase !== 'result' || !state.round?.result) return;
+  if (state.round.outcomeApplied) return;
+  state.round.outcomeApplied = true;
+
+  const winnerId =
+    state.round.result === 'guesser' ? state.round.guesserId : state.round.setterId;
+  state.seriesWins = state.seriesWins || {};
+  state.seriesWins[winnerId] = (state.seriesWins[winnerId] || 0) + 1;
+
+  const bestOf = Math.max(1, state.bestOf || 1);
+  if (state.seriesWins[winnerId] >= bestOf) {
+    state.seriesWinner = winnerId;
+    state.returnAt = Date.now() + RETURN_MS;
+    state.resumeAt = null;
+  } else {
+    state.seriesWinner = null;
+    state.resumeAt = Date.now() + INTERMISSION_MS;
+    state.returnAt = null;
+  }
 }

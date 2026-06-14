@@ -652,6 +652,8 @@ function render() {
   if (phase === 'guessing') startDisplayTimer();
   else stopDisplayTimer();
 
+  if (phase !== 'result') stopResultCountdown();
+
   if (phase === 'lobby') return renderLobby(app);
   if (phase === 'writing') return renderWriting(app);
   if (phase === 'guessing') return renderGuessing(app);
@@ -971,8 +973,10 @@ function renderGuessing(app) {
 function renderResult(app) {
   const s = ui.state;
   const r = s.round;
+  const series = s.series || {};
   const guesser = s.players.find(p => p.userId === r.guesserId);
   const setter = s.players.find(p => p.userId === r.setterId);
+
   let html = '';
   if (r.result === 'guesser') {
     html = `
@@ -992,6 +996,19 @@ function renderResult(app) {
     `;
   }
 
+  // Marcador de la serie (siempre presente). Si bestOf = 1, es prácticamente
+  // un "1 - 0" que va directo al hub.
+  const scoreHtml = `
+    <div class="reveal" style="font-size:17px;">
+      Partida ${series.gameNumber} · al mejor de ${series.bestOf}
+    </div>
+    <div class="reveal" style="display:flex; justify-content:center; gap:18px; font-family:'Rye', serif; font-size:26px; color:var(--leather-dark);">
+      <span>${escapeHtml(s.players[0].name)} <strong>${series.wins?.[s.players[0].userId] || 0}</strong></span>
+      <span style="color:var(--muted);">–</span>
+      <span><strong>${series.wins?.[s.players[1].userId] || 0}</strong> ${escapeHtml(s.players[1].name)}</span>
+    </div>
+  `;
+
   let statusHtml = '';
   if (r.resultStatus?.sending) {
     statusHtml = `<div class="info-box center"><span class="spinner"></span> Guardando resultado…</div>`;
@@ -1006,11 +1023,28 @@ function renderResult(app) {
     statusHtml = `<div class="info-box center"><span class="spinner"></span> Enviando resultado…</div>`;
   }
 
-  app.innerHTML = html + statusHtml + `
-    <div class="center" style="margin-top:18px;">
-      <button class="big-button" id="again-btn">Otra partida</button>
-    </div>
-  `;
+  // Cuenta atrás: o bien volvemos al hub (serie terminada) o pasamos a la
+  // siguiente partida (intermedio). Nunca hay botón manual.
+  let countdownHtml = '';
+  if (series.winner) {
+    const seriesWinnerName = s.players.find(p => p.userId === series.winner)?.name || '';
+    countdownHtml = `
+      <div class="reveal" style="margin-top:18px;">
+        🏆 Gana el partido <strong>${escapeHtml(seriesWinnerName)}</strong>
+      </div>
+      <div class="info-box center" id="series-countdown" style="margin-top:8px;">
+        Volviendo al hub en <strong id="cd-secs">…</strong>s
+      </div>
+    `;
+  } else {
+    countdownHtml = `
+      <div class="info-box center" id="series-countdown" style="margin-top:18px;">
+        Siguiente partida en <strong id="cd-secs">…</strong>s
+      </div>
+    `;
+  }
+
+  app.innerHTML = html + scoreHtml + statusHtml + countdownHtml;
 
   const retry = document.getElementById('retry-result');
   if (retry) retry.onclick = async () => {
@@ -1020,16 +1054,39 @@ function renderResult(app) {
     retry.disabled = false;
   };
 
-  document.getElementById('again-btn').onclick = async () => {
-    const btn = document.getElementById('again-btn');
-    btn.disabled = true;
-    try {
-      await dispatch('next-round');
-    } catch (e) {
-      btn.disabled = false;
-      alert(e.message);
+  // Arranca la cuenta atrás local sincronizada con el reloj del servidor.
+  startResultCountdown(series);
+}
+
+let resultCountdownTimer = null;
+let resultCountdownFired = false;
+function stopResultCountdown() {
+  if (resultCountdownTimer) { clearInterval(resultCountdownTimer); resultCountdownTimer = null; }
+}
+function startResultCountdown(series) {
+  stopResultCountdown();
+  resultCountdownFired = false;
+  const target = series.winner ? series.returnAt : series.resumeAt;
+  if (!target) return;
+  const serverNow = series.serverNow || Date.now();
+  const drift = serverNow - Date.now();
+  const tick = async () => {
+    const el = document.getElementById('cd-secs');
+    if (!el) { stopResultCountdown(); return; }
+    const remaining = Math.max(0, target - (Date.now() + drift));
+    el.textContent = Math.ceil(remaining / 1000);
+    if (remaining <= 0 && !resultCountdownFired) {
+      resultCountdownFired = true;
+      stopResultCountdown();
+      if (series.winner) {
+        window.location.href = HUB_URL;
+      } else {
+        try { await dispatch('next-round'); } catch (e) { console.warn(e.message); }
+      }
     }
   };
+  tick();
+  resultCountdownTimer = setInterval(tick, 250);
 }
 
 // ---------- Teclado ----------

@@ -45,7 +45,9 @@ async function handle(req, res) {
     if (!players.find(p => p.userId === user.id)) {
       return res.status(403).json({ error: 'No eres jugador de esta sala' });
     }
-    state = freshState(code, players);
+    // bestOf viene del hub (winsNeeded). Por defecto 1 partida.
+    const bestOf = Math.max(1, Number(sala.winsNeeded) || 1);
+    state = freshState(code, players, bestOf);
     created = true;
   } else {
     if (!state.players.find(p => p.userId === user.id)) {

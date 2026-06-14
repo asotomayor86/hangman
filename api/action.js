@@ -13,6 +13,7 @@ import {
   getState,
   saveState,
   applyTimeoutIfDue,
+  applyMatchOutcome,
   normalizeWord,
   isValidWord,
   isWordComplete,
@@ -141,12 +142,14 @@ function actionGuessLetter(state, user, payload) {
     if (isWordComplete(state.round.word, state.round.guessed)) {
       state.round.result = 'guesser';
       state.phase = 'result';
+      applyMatchOutcome(state);
     }
   } else {
     state.round.wrong.push(letter);
     if (state.round.wrong.length >= 6) {
       state.round.result = 'setter';
       state.phase = 'result';
+      applyMatchOutcome(state);
     }
   }
 }
@@ -192,6 +195,11 @@ async function actionSubmitResult(state, code) {
 
 function actionNextRound(state) {
   if (state.phase !== 'result') throw new Error('No hay resultado todavía');
+  if (state.seriesWinner) {
+    throw new Error('La serie ya ha terminado. Volved al hub.');
+  }
   state.phase = 'lobby';
   state.round = null;
+  state.resumeAt = null;
+  state.seriesGame = (state.seriesGame || 1) + 1;
 }
